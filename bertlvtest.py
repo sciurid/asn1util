@@ -29,30 +29,32 @@ class BERTLVTestCase(TestCase):
     @skip
     def test_integer(self):
         s = 65534
-        t = Decoder.decode_integer(Encoder._encode_integer_enum(s))
+        t = Decoder.decode_integer(Encoder._encode_integer(s))
         self.assertEqual(s, t)
 
     def test_encoding(self):
         encoder = Encoder()
-        encoder.append_primitive(TagNumber.Integer, 20)
-        encoder.append_primitive(TagNumber.OctetString, b'\x01\x02\x03')
         encoder.begin_constructed(TagNumber.Sequence)
-        encoder.append_primitive(TagNumber.OctetString, b'\x01\x02\x03')
-        encoder.append_primitive(TagNumber.OctetString, b'\x04\x05\x06')
-        encoder.append_primitive(TagNumber.OctetString, b'\x07\x08\x09')
+        encoder.append_primitive(TagNumber.Integer, value=20)
+        encoder.append_primitive(TagNumber.Real, value=123.4)
+        encoder.append_primitive(TagNumber.Real, value=10.625, base=16)
+        encoder.append_primitive(TagNumber.OctetString, value=b'\x01\x02\x03')
+        encoder.append_primitive(TagNumber.UTF8String, value='我的世界')
+        encoder.append_primitive(TagNumber.UniversalString, value='我的世界')
+        encoder.append_primitive(TagNumber.ObjectIdentifier, value='1.2.840.113549')
         encoder.end_constructed()
         print("Encoded: " + encoder.data.hex(sep=' '))
         decode_print(encoder.data)
 
     def test_object_identifier(self):
         oid_1 = ObjectIdentifier([1, 2, 840, 113549])
-        encoded_1 = oid_1.encode().hex(' ')
+        encoded_1 = oid_1.to_octets().hex(' ')
         oid_2 = ObjectIdentifier.decode_string('1.2.840.113549')
-        encoded_2 = oid_2.encode().hex(' ')
+        encoded_2 = oid_2.to_octets().hex(' ')
 
         self.assertEqual(encoded_1, "2a 86 48 86 f7 0d")
         self.assertEqual(encoded_1, encoded_2)
-        oid = ObjectIdentifier.decode(oid_1.encode())
+        oid = ObjectIdentifier.decode(oid_1.to_octets())
         print(oid)
 
 

@@ -12,8 +12,11 @@ logger = logging.getLogger(__name__)
 def bin_expr(octets: bytes):
     return ''.join(map(lambda b: '{:08b}'.format(b), octets))
 
+def repr_bit_string(octets: bytes, bit_length: int):
+    return bin_expr(octets)[0:bit_length]
 
-BOUNDARIES = [2 ** (n * 8 + 7) * (-1) for n in range(8)]
+
+__BOUNDARIES = [2 ** (n * 8 + 7) * (-1) for n in range(8)]
 
 
 def signed_int_to_bytes(value: int):
@@ -22,7 +25,7 @@ def signed_int_to_bytes(value: int):
     :param value: 整数
     :return:
     """
-    for i, v in enumerate(BOUNDARIES):  # 处理8字节以内的边界负数
+    for i, v in enumerate(__BOUNDARIES):  # 处理8字节以内的边界负数
         if value == v:
             return b'\x80' + i * b'\x00'
 
@@ -328,173 +331,6 @@ def dfs_decoder(data: BinaryIO):
             stack.append(DecoderStackItem(tag, length, vof))
 
 
-class EncodingException(Exception):
-    def __init__(self, message):
-        self.message = message
-
-
-class NotSupportedValueException(EncodingException):
-    def __init__(self, value):
-        self.message = f'Value {value} of type {type(value)} is not supported.'
-
-
-class Encoder:
-    def __init__(self):
-        self._stack = []
-        self._data = bytearray()
-
-    @staticmethod
-    def _encode_boolean(value: Union[bool, int]):
-        if isinstance(value, bool):
-            return b'\xff' if value else b'\x00'
-        if isinstance(value, int):
-            return b'\xff' if value != 0 else b'\x00'
-        raise NotSupportedValueException(value)
-
-    @staticmethod
-    def _encode_bit_string(value: Union[bytes, tuple, list]):
-        if isinstance(value, bytes):
-            return Encoder._encode_bit_string(value, len(value) * 8)
-        if isinstance(value, tuple) or isinstance(value, list):
-            if len(tuple) != 2:
-                raise Exception('Compsite BitString value should be (octets, bit-length) tuple or list')
-            return Encoder._encode_bit_string(value[0], value[1])
-        else:
-            raise NotSupportedValueException(value)
-
-    @staticmethod
-    def _encode_bit_string(octets: bytes, bit_length: int):
-        encoded = bytearray()
-        assert (len(octets) - 1) * 8 < bit_length <= len(octets) * 8
-        if bit_length % 8 == 0:
-            encoded.append(0x00)
-            encoded.extend(octets)
-        else:
-            unused = 8 - (bit_length % 8)
-            encoded.append(unused)
-            encoded.extend(octets)
-            encoded[-1] &= ((0xff << unused) & 0xff)
-        return encoded
-
-    @staticmethod
-    def _encode_integer_enum(value: Union[int, IntEnum]):
-        if isinstance(value, int):
-            return signed_int_to_bytes(value)
-        if isinstance(value, IntEnum):
-            return signed_int_to_bytes(value.value)
-        raise NotSupportedValueException(value)
-
-    def append_primitive(self, tag_number: int, value, tag_class: TagClass = TagClass.UNIVERSAL):
-        tag = Tag(tag_class, TagPC.PRIMITIVE, tag_number)
-        encoded = b''
-        if tag_number == TagNumber.EndOfContent:
-            pass
-        elif tag_number == TagNumber.Boolean:
-            encoded = Encoder._encode_boolean(value)
-        elif tag_number == TagNumber.Integer:
-            if isinstance(value, int):
-                encoded = Encoder._encode_integer_enum(value)
-        elif tag_number == TagNumber.BitString:
-            encoded = Encoder._encode_bit_string(value)
-        elif tag_number == TagNumber.OctetString:
-            if isinstance(value, bytes):
-                encoded = value
-            else:
-                raise NotSupportedValueException(value)
-        elif tag_number == TagNumber.Null:
-            pass  # TODO
-        elif tag_number == TagNumber.ObjectIdentifier:
-            pass  # TODO
-        elif tag_number == TagNumber.ObjectDescriptor:
-            pass  # TODO
-        elif tag_number == TagNumber.Real:
-            pass  # TODO
-        elif tag_number == TagNumber.Enumerated:
-            if isinstance(value, int):
-                encoded = Encoder._encode_integer_enum(value)
-        elif tag_number == TagNumber.UTF8String:
-            if isinstance(value, str):
-                encoded = value.encode('utf-8')
-            else:
-                raise NotSupportedValueException(value)
-        elif tag_number == TagNumber.RelativeOID:
-            pass
-        elif tag_number == TagNumber.Time:
-            pass
-        elif tag_number == TagNumber.NumericString:
-            pass
-        elif tag_number == TagNumber.PrintableString:
-            pass
-        elif tag_number == TagNumber.T61String:
-            pass
-        elif tag_number == TagNumber.IA5String:
-            pass
-        elif tag_number == TagNumber.UTCTime:
-            pass
-        elif tag_number == TagNumber.GeneralizedTime:
-            pass
-        elif tag_number == TagNumber.UniversalString:
-            if isinstance(value, str):
-                encoded = value.encode('utf-32')
-            else:
-                raise NotSupportedValueException(value)
-            pass
-        elif tag_number == TagNumber.Date:
-            pass
-        elif tag_number == TagNumber.TimeOfDay:
-            pass
-        elif tag_number == TagNumber.DateTime:
-            pass
-        elif tag_number == TagNumber.Duration:
-            pass
-
-        self._recursive_return(tag, encoded)
-
-    def begin_constructed(self, tag_number: int, tag_class: TagClass = TagClass.UNIVERSAL):
-        tag = Tag(tag_class, TagPC.CONSTRUCTED, tag_number)
-        self._stack.append((tag, bytearray()))
-
-    def end_constructed(self):
-        if len(self._stack) == 0:
-            raise EncodingException('No begin_constructed() with end_constructed()')
-        tag, value = self._stack.pop()
-        self._recursive_return(tag, value)
-
-    def _recursive_return(self, tag: Tag, value: bytes):
-        length = Length(len(value))
-        segment = tag.octets + length.octets + value
-        if len(self._stack) == 0:
-            self._data.extend(segment)
-        else:
-            self._stack[-1][1].extend(segment)
-
-    @property
-    def data(self):
-        if len(self._stack) == 0:
-            return bytes(self._data)
-        else:
-            raise EncodingException('Constructed element has not finished.')
-
-
-class Decoder:
-    @staticmethod
-    def decode_bit_string(octets: bytes) -> (bytes, int):
-        bit_length = (len(octets) - 1) * 8
-        if octets[0] > 0:
-            bit_length -= octets[0]
-        return octets[1:], bit_length
-
-    @staticmethod
-    def decode_integer(octets: bytes) -> int:
-        return int.from_bytes(octets, byteorder='big', signed=True)
-
-
-class Util:
-    @staticmethod
-    def repr_bit_string(octets: bytes, bit_length: int):
-        return bin_expr(octets)[0:bit_length]
-
-
 class InvalidObjectIdentifier(InvalidValue):
     def __init__(self, message):
         self.message = message
@@ -524,7 +360,7 @@ class ObjectIdentifier:
     def __repr__(self):
         return '.'.join([str(i) for i in self._components])
 
-    def encode(self) -> bytes:
+    def to_octets(self) -> bytes:
         data = [self.components[0] * 40 + self.components[1]]
         data.extend(self.components[2:])
         data.reverse()
@@ -537,6 +373,15 @@ class ObjectIdentifier:
                 comp >>= 7
         octets.reverse()
         return octets
+
+    @staticmethod
+    def encode(value: Union[str, Iterable[int]]):
+        if isinstance(value, str):
+            return ObjectIdentifier.decode_string(value).to_octets()
+        elif isinstance(value, Iterable):
+            return ObjectIdentifier(value).to_octets()
+        else:
+            raise EncodingException()
 
     OID_STRING_PATTERN: re.Pattern = re.compile(r'^[012](\.[0-9]+)+$')
 
@@ -668,7 +513,7 @@ class Real:
         return s, n, e
 
     @staticmethod
-    def encode_base2(value: Union[Decimal, float, int], base: int = 2, max_n_octets: int = 3) -> bytes:
+    def encode_base2(value: Union[Decimal, float, int], base: int = 2, max_n_octets: int = 4) -> bytes:
         assert base in (2, 8, 16)
         data = bytearray()
         first_octet = 0x80  # b8 = 1
@@ -715,6 +560,7 @@ class Real:
     def encode_base10(value: Union[int, float, Decimal], nr: int = 2) -> bytes:
         assert nr in (1, 2, 3)
         str_value = None
+        first_octet = None
         if nr == 1:
             first_octet = b'\x01'
             str_value = f'{int(value):d}'
@@ -723,7 +569,7 @@ class Real:
             if type(value) == int:
                 str_value = f'{value:d}'
             elif type(value) == float:
-                str_value = f'{value:.15f}'.rstrip('0')
+                str_value = f'{value:.15g}'.rstrip('0')
             elif type(value) == Decimal:
                 str_value = str(value)
         elif nr == 3:
@@ -731,6 +577,15 @@ class Real:
             str_value = f'{value:e}'
 
         return first_octet + str_value.encode('ascii')
+
+    @staticmethod
+    def encode(value, base: int = 10, nr: int = 2, max_n_octets: int = 4):
+        if base == 10:
+            return Real.encode_base10(value, nr)
+        elif base in (2, 8, 16):
+            return Real.encode_base2(value, base, max_n_octets)
+        else:
+            raise InvalidReal()
 
     @staticmethod
     def _decode_base2(octets: bytes):
@@ -779,3 +634,117 @@ class Real:
             return Real(value=Decimal(), special=fo)
         else:
             raise InvalidReal("Not a valid binary, decimal or special value representation.")
+
+
+class EncodingException(Exception):
+    def __init__(self, message):
+        self.message = message
+
+
+class NotSupportedValueException(EncodingException):
+    def __init__(self, value):
+        self.message = f'Value {value} of type {type(value)} is not supported.'
+
+
+def encode_boolean(value: Union[bool, int]):
+    if isinstance(value, bool):
+        return b'\xff' if value else b'\x00'
+    if isinstance(value, int):
+        return b'\xff' if value != 0 else b'\x00'
+    raise NotSupportedValueException(value)
+
+
+def encode_bit_string(octets: bytes, bit_length: int = None):
+    if bit_length is None:
+        bit_length = len(octets) * 8
+    encoded = bytearray()
+    assert (len(octets) - 1) * 8 < bit_length <= len(octets) * 8
+    if bit_length % 8 == 0:
+        encoded.append(0x00)
+        encoded.extend(octets)
+    else:
+        unused = 8 - (bit_length % 8)
+        encoded.append(unused)
+        encoded.extend(octets)
+        encoded[-1] &= ((0xff << unused) & 0xff)
+    return encoded
+
+
+def decode_bit_string(octets: bytes) -> (bytes, int):
+    bit_length = (len(octets) - 1) * 8
+    if octets[0] > 0:
+        bit_length -= octets[0]
+    return octets[1:], bit_length
+
+
+TAG_HANDLERS = {
+    TagNumber.EndOfContent: (lambda: b''),
+    TagNumber.Boolean: encode_boolean,
+    TagNumber.Integer: signed_int_to_bytes,
+    TagNumber.BitString: encode_bit_string,
+    TagNumber.OctetString: (lambda value: value),
+    TagNumber.Enumerated: signed_int_to_bytes,
+    TagNumber.UTF8String: (lambda value: value.encode('utf-8')),
+    TagNumber.UniversalString: (lambda value: value.encode('utf-32')),
+    TagNumber.ObjectIdentifier: ObjectIdentifier.encode,
+    TagNumber.Real: Real.encode
+}
+
+class Encoder:
+    def __init__(self):
+        self._stack = []
+        self._data = bytearray()
+
+    def append_primitive(self, tag_number: int, tag_class: TagClass = TagClass.UNIVERSAL, **kwargs):
+        tag = Tag(tag_class, TagPC.PRIMITIVE, tag_number)
+        tn = TagNumber(tag_number)
+        if tn in TAG_HANDLERS:
+            encoded = TAG_HANDLERS[tn](**kwargs)
+        else:
+            raise NotImplementedError(tn)
+
+        self._recursive_return(tag, encoded)
+
+    def begin_constructed(self, tag_number: int, tag_class: TagClass = TagClass.UNIVERSAL):
+        """
+        开始构造Constructed类型元素，将Tag和对应的字节数组压栈。
+        :param tag_number:
+        :param tag_class:
+        :return:
+        """
+        tag = Tag(tag_class, TagPC.CONSTRUCTED, tag_number)
+        self._stack.append((tag, bytearray()))
+
+    def end_constructed(self):
+        """
+        完成构造Constructed类型元素。
+        将Tag和Value退栈，调用_recursive_return处理元素。
+        :return:
+        """
+        if len(self._stack) == 0:
+            raise EncodingException('No begin_constructed() with end_constructed()')
+        tag, value = self._stack.pop()
+        self._recursive_return(tag, value)
+
+    def _recursive_return(self, tag: Tag, value: bytes):
+        """
+        根据Tag和Value计算Length，构造元素数据段。
+        如果没有上级Constructed元素，则将元素数据段附到数据流中。
+        如果有，则将元素数据段附到上级元素的值数据中。
+        :param tag:
+        :param value:
+        :return:
+        """
+        length = Length(len(value))
+        segment = tag.octets + length.octets + value
+        if len(self._stack) == 0:
+            self._data.extend(segment)
+        else:
+            self._stack[-1][1].extend(segment)
+
+    @property
+    def data(self):
+        if len(self._stack) == 0:
+            return bytes(self._data)
+        else:
+            raise EncodingException('Constructed element has not finished.')
