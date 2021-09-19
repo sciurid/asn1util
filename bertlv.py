@@ -3,7 +3,7 @@ from enum import IntEnum
 from collections import namedtuple
 from typing import Union, BinaryIO, Iterable
 import re
-from decimal import Decimal, Context
+from decimal import Decimal, Context, getcontext
 import struct
 
 logger = logging.getLogger(__name__)
@@ -524,7 +524,7 @@ class ObjectIdentifier:
     def __repr__(self):
         return '.'.join([str(i) for i in self._components])
 
-    def encode(self):
+    def encode(self) -> bytes:
         data = [self.components[0] * 40 + self.components[1]]
         data.extend(self.components[2:])
         data.reverse()
@@ -571,20 +571,44 @@ class ObjectIdentifier:
         return ObjectIdentifier(components)
 
 
+class InvalidReal(InvalidValue):
+    def __init__(self, message):
+        self.message = message
+
+
 class Real:
-    def __init__(self, value: Decimal):
+    PLUS_INFINITY = 0x40
+    MINUS_INFINITY = 0x41
+    NOT_A_NUMBER = 0x42
+    MINUS_ZERO = 0x43
+    SPECIALS = (PLUS_INFINITY, MINUS_INFINITY, NOT_A_NUMBER, MINUS_ZERO)
+
+    def __init__(self, value: Decimal, special: int = None):
         self._value = value.normalize()
+        assert special is None or special in Real.SPECIALS
+        self._special = special
 
-    @classmethod
-    def eval_float(cls, float_value: float, precision: int = 16):
-        return cls(Decimal(float_value, Context(prec=precision)))
+    def is_special(self):
+        return self._special is not None
 
-    @classmethod
-    def eval_string(cls, string_value: str):
-        return cls(Decimal(str))
+    @property
+    def special(self):
+        return self._special
+
+    @property
+    def value(self):
+        return self._value
 
     @staticmethod
-    def decompose_decimal_to_sne_of_two(value: Decimal, max_n_octets: int = 3):
+    def eval_float(float_value: float, precision: int = 16):
+        return Real(Decimal(float_value, Context(prec=precision)))
+
+    @staticmethod
+    def eval_string(string_value: str):
+        return Real(Decimal(string_value))
+
+    @staticmethod
+    def decompose_decimal_to_sne_of_two(value: Decimal, max_n_octets):
         """
         将数值分解为符号项S，整数项N和2的指数项E，并符合DER格式中关于N的最低位不为0的要求。
         :param value: 数值
@@ -605,7 +629,7 @@ class Real:
             if frac_part < 1:
                 n <<= 1
             else:
-                n = n << 1 + 1
+                n = (n << 1) + 1
                 frac_part -= 1
         e = -1 * frac_bit_len
         while n & 0x01 == 0:
@@ -644,7 +668,7 @@ class Real:
         return s, n, e
 
     @staticmethod
-    def encode_base2(value: Union[Decimal, float, int], base: int, max_n_octets: int = 3):
+    def encode_base2(value: Union[Decimal, float, int], base: int = 2, max_n_octets: int = 3) -> bytes:
         assert base in (2, 8, 16)
         data = bytearray()
         first_octet = 0x80  # b8 = 1
@@ -652,8 +676,12 @@ class Real:
             s, n, e = Real.decompose_ieee754_to_sne_of_two(value)
         else:
             s, n, e = Real.decompose_decimal_to_sne_of_two(value, max_n_octets)
+
+        print(s, n, e)
+
         if s != 0:  # b7 = 1 if s = -1 or 0 otherwise
             first_octet |= 0x40
+        f = 0
         if base == 8:  # b6,b5=01
             first_octet |= 0x10
             f = e % 3
@@ -670,20 +698,21 @@ class Real:
             data.append(first_octet)
             pass  # b2,b1=00
         elif exp_len == 2:
-            data.append(first_octet)
             first_octet |= 0x01  # b2,b1=01
-        elif exp_len == 3:
             data.append(first_octet)
+        elif exp_len == 3:
             first_octet |= 0x02  # b2,b1=10
+            data.append(first_octet)
         else:
             first_octet |= 0x03  # b2,b1=11
+            data.append(first_octet)
             data.extend(unsigned_int_to_bytes(exp_len))
         data.extend(exp_octets)
         data.extend(unsigned_int_to_bytes(n))
         return data
 
     @staticmethod
-    def encode_base10(value: Union[int, float, Decimal], nr: int = 2):
+    def encode_base10(value: Union[int, float, Decimal], nr: int = 2) -> bytes:
         assert nr in (1, 2, 3)
         str_value = None
         if nr == 1:
@@ -703,7 +732,50 @@ class Real:
 
         return first_octet + str_value.encode('ascii')
 
+    @staticmethod
+    def _decode_base2(octets: bytes):
+        fo = octets[0]  # for short of first_octet
+        assert fo & 0x80 != 0
+        s = 1 if (fo & 0x40) == 0 else -1  # b7 -> sign
+        b = (2, 8, 16, None)[(fo >> 4) & 0x03]  #b6,b5 -> base
+        if b is None:
+            raise InvalidReal("Base is a reserved value. (b6,b5=11")
+        f = fo >> 2 & 0x03
+        le = fo & 0x03
+        if le == 0 or le == 1 or le == 2:
+            assert len(octets) > le + 2
+            eo = octets[1:le+2]
+            no = octets[le+2:]
+        else:
+            lle = octets[1]
+            assert len(octets) > lle + 3
+            eo = octets[2:lle+2]
+            no = octets[lle+2:]
+        e = int.from_bytes(eo, byteorder='big', signed=True)
+        n = int.from_bytes(no, byteorder='big', signed=False)
+        dec_val = getcontext().power(b, e) * (2 ** f) * n * s
+        return Real(dec_val)
 
+    @staticmethod
+    def _decode_base10(octets: bytes):
+        assert octets[0] & 0xC0 == 0
+        nr = octets[0] & 0x3f
+        if nr == 0x01 or nr == 0x02 or nr == 0x03:  # nr1, nr2, nr3
+            return Real.eval_string(octets[1:].decode('ascii'))
+        else:
+            raise InvalidReal("Decimal encoding is specified but not a valid representation is chosen.")
 
-
-
+    @staticmethod
+    def decode(octets: bytes):  # 8.5.6
+        assert len(octets) > 0
+        fo = octets[0]  # for short of first_octet
+        if fo & 0x80 != 0:  # b8=1
+            return Real._decode_base2(octets)
+        elif fo & 0x40 == 0:  # b8,b7=00
+            return Real._decode_base10(octets)
+        elif fo in Real.SPECIALS:
+            if len(octets) != 1:
+                raise InvalidReal("Special real value with following octets")
+            return Real(value=Decimal(), special=fo)
+        else:
+            raise InvalidReal("Not a valid binary, decimal or special value representation.")
