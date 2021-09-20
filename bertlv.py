@@ -4,13 +4,16 @@ from collections import namedtuple
 from typing import Union, BinaryIO, Iterable
 import re
 from decimal import Decimal, Context, getcontext
+from datetime import *
 import struct
+import isodate
 
 logger = logging.getLogger(__name__)
 
 
 def bin_expr(octets: bytes):
     return ''.join(map(lambda b: '{:08b}'.format(b), octets))
+
 
 def repr_bit_string(octets: bytes, bit_length: int):
     return bin_expr(octets)[0:bit_length]
@@ -92,6 +95,7 @@ class TagNumber(IntEnum):
     UTCTime = 0x17
     GeneralizedTime = 0x18
     UniversalString = 0x1c
+    BMPString = 0x1e
     Date = 0x1f
     TimeOfDay = 0x20
     DateTime = 0x21
@@ -677,18 +681,61 @@ def decode_bit_string(octets: bytes) -> (bytes, int):
     return octets[1:], bit_length
 
 
+PATTERN_BMP_STRING = re.compile(r'^[\u0000-\uffff]*$')
+
+
+def encode_bmp_string(value: str) -> bytes:
+    assert PATTERN_BMP_STRING.match(value) is not None
+    return value.encode('utf-16')
+
+
+def encode_generalized_time(value: datetime, spec='auto') -> bytes:
+    return value.isoformat(timespec=spec).encode('ascii')
+
+
+def encode_utc_time(value: datetime, spec='auto') -> bytes:
+    return (value.astimezone(timezone.utc).isoformat(timespec=spec).rstrip('+00:00') + 'Z').encode('ascii')
+
+
+def encode_time(value: time, spec='auto') -> bytes:
+    assert isinstance(value, time)
+    return value.isoformat(timespec=spec).encode('ascii')
+
+
+def encode_date(value: date) -> bytes:
+    if isinstance(value, datetime):
+        value = date(value.year, value.month, value.day)
+    assert isinstance(value, date)
+    return value.isoformat().encode('ascii')
+
+
+def encode_duration(value: timedelta) -> bytes:
+    assert isinstance(value, timedelta)
+    return isodate.duration_isoformat(value).encode('ascii')
+
+
 TAG_HANDLERS = {
     TagNumber.EndOfContent: (lambda: b''),
     TagNumber.Boolean: encode_boolean,
     TagNumber.Integer: signed_int_to_bytes,
     TagNumber.BitString: encode_bit_string,
     TagNumber.OctetString: (lambda value: value),
+    TagNumber.Null: (lambda: b''),
     TagNumber.Enumerated: signed_int_to_bytes,
     TagNumber.UTF8String: (lambda value: value.encode('utf-8')),
     TagNumber.UniversalString: (lambda value: value.encode('utf-32')),
+    TagNumber.BMPString: encode_bmp_string,
     TagNumber.ObjectIdentifier: ObjectIdentifier.encode,
-    TagNumber.Real: Real.encode
+    TagNumber.Real: Real.encode,
+    TagNumber.GeneralizedTime: encode_generalized_time,
+    TagNumber.UTCTime: encode_utc_time,
+    TagNumber.Time: encode_time,
+    TagNumber.TimeOfDay: encode_time,
+    TagNumber.Date: encode_date,
+    TagNumber.DateTime: encode_generalized_time,
+    TagNumber.Duration: encode_duration
 }
+
 
 class Encoder:
     def __init__(self):

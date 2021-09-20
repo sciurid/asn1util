@@ -39,6 +39,7 @@ class BERTLVTestCase(TestCase):
         encoder.append_primitive(TagNumber.Real, value=123.4)
         encoder.append_primitive(TagNumber.Real, value=10.625, base=16)
         encoder.append_primitive(TagNumber.OctetString, value=b'\x01\x02\x03')
+        encoder.append_primitive(TagNumber.Null)
         encoder.append_primitive(TagNumber.UTF8String, value='我的世界')
         encoder.append_primitive(TagNumber.UniversalString, value='我的世界')
         encoder.append_primitive(TagNumber.ObjectIdentifier, value='1.2.840.113549')
