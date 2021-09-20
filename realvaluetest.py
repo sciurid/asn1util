@@ -1,4 +1,4 @@
-from bertlv import *
+from asn1util import *
 from unittest import TestCase, skip
 from decimal import *
 

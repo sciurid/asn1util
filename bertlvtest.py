@@ -1,6 +1,6 @@
 from unittest import TestCase, skip
-from bertlv import *
 from io import BytesIO
+from asn1util import *
 
 
 def decode_print(data):
@@ -21,16 +21,10 @@ class BERTLVTestCase(TestCase):
 
     @skip
     def test_bit_string(self):
-        o, l = Decoder.decode_bit_string(bytes.fromhex('06 6e 5d e0'))
+        o, l = decode_bit_string(bytes.fromhex('06 6e 5d e0'))
         print(o.hex())
-        print(Util.repr_bit_string(o, l))
+        print(repr_bit_string(o, l))
         print(Encoder._encode_bit_string(o, l).hex())
-
-    @skip
-    def test_integer(self):
-        s = 65534
-        t = Decoder.decode_integer(Encoder._encode_integer(s))
-        self.assertEqual(s, t)
 
     def test_encoding(self):
         encoder = Encoder()
