@@ -33,19 +33,24 @@ def dfs_decoder(data: BinaryIO):
             if len(stack) == 0:  # 根元素
                 continue
 
-            # 检查上级元素是否结束
-            parent = stack[-1]  # 取得上级元素
-            if parent.length.is_definite:  # 定长上级元素则计算累计value长度
-                cur_pos = data.tell()  # 当前元素结束时的offset
-                exp_pos = parent.value_offset + parent.length.value  # 上级元素结束时的offset
-                if cur_pos == exp_pos:  # 相等则上级元素结束，退栈
-                    stack.pop()
-                elif cur_pos > exp_pos:  # 当前位置超出上级元素结束值，格式错误
-                    raise InvalidTLV(f"Length of sub-tlvs in value {cur_pos - parent.value_offset} "
-                                     f"exceeds the specified length {parent.length.value}.")
-            else:  # 不定长上级元素
-                if tag.number == 0 and length.value == 0:  # 遇到EOC标记结尾，退栈
-                    stack.pop()
+            while len(stack) > 0:
+                # 检查上级元素是否结束
+                parent = stack[-1]  # 取得上级元素
+                if parent.length.is_definite:  # 定长上级元素则计算累计value长度
+                    cur_pos = data.tell()  # 当前元素结束时的offset
+                    exp_pos = parent.value_offset + parent.length.value  # 上级元素结束时的offset
+                    if cur_pos == exp_pos:  # 相等则上级元素结束，退栈
+                        stack.pop()
+                        continue
+                    elif cur_pos > exp_pos:  # 当前位置超出上级元素结束值，格式错误
+                        raise InvalidTLV(f"Length of sub-tlvs in value {cur_pos - parent.value_offset} "
+                                         f"exceeds the specified length {parent.length.value}.")
+                    else:
+                        break
+                else:  # 不定长上级元素
+                    if tag.number == 0 and length.value == 0:  # 遇到EOC标记结尾，退栈
+                        stack.pop()
+                        continue
         else:
             yield tag, length, None, offsets, stack  # 返回结构类型
             stack.append(DecoderStackItem(tag, length, vof))

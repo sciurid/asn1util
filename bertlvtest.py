@@ -52,6 +52,13 @@ class BERTLVTestCase(TestCase):
         oid = ObjectIdentifier.decode(oid_1.to_octets())
         print(oid)
 
+    def test_certificate(self):
+        with open('chenqiang.me.cer', 'rb') as cert:
+            for tag, length, value_octets, offsets, stack in dfs_decoder(cert):
+                indent = ' ' * 2 * len(stack)
+                print(f'{indent} {tag} {length} [V]{"" if value_octets is None else value_octets.hex(" ")}')
+
+
 
 
 

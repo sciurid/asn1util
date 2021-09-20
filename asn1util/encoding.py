@@ -1,5 +1,7 @@
 from datetime import *
+from typing import Union
 import isodate
+from isodate.duration import Duration
 import re
 
 
@@ -42,12 +44,18 @@ def encode_utc_time(value: datetime, spec='auto') -> bytes:
     return (value.astimezone(timezone.utc).isoformat(timespec=spec).rstrip('+00:00') + 'Z').encode('ascii')
 
 
+def decode_utc_time(value: bytes) -> datetime:
+    string_value = value.decode('ascii')
+    assert string_value[-1] == 'Z'
+    return datetime.fromisoformat(string_value[:-1]).astimezone(timezone.utc)
+
+
 def encode_time(value: time, spec='auto') -> bytes:
     assert isinstance(value, time)
     return value.isoformat(timespec=spec).encode('ascii')
 
 
-def encode_date(value: date) -> bytes:
+def encode_date(value: Union[date, datetime]) -> bytes:
     if isinstance(value, datetime):
         value = date(value.year, value.month, value.day)
     assert isinstance(value, date)
@@ -57,3 +65,11 @@ def encode_date(value: date) -> bytes:
 def encode_duration(value: timedelta) -> bytes:
     assert isinstance(value, timedelta)
     return isodate.duration_isoformat(value).encode('ascii')
+
+
+def decode_duration(value: bytes) -> timedelta:
+    res = isodate.parse_duration(value.decode('ascii'))
+    if isinstance(Duration):
+        return res.totimedelta()
+    else:
+        return res
