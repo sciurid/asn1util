@@ -3,11 +3,11 @@ from io import BytesIO
 from asn1util import *
 
 
-def decode_print(data):
-    for tag, length, value_octets, offsets, stack in dfs_decoder(BytesIO(data)):
-        indent = ' ' * 2 * len(stack)
-        print(f'{indent} {tag} {length} [V]{"" if value_octets is None else value_octets.hex(" ")}')
-
+# def decode_print(data):
+#     for tag, length, value_octets, offsets, stack in dfs_decoder(BytesIO(data)):
+#         indent = ' ' * 2 * len(stack)
+#         print(f'{indent} {tag} {length} [V]{"" if value_octets is None else value_octets.hex(" ")}')
+#
 
 class BERTLVTestCase(TestCase):
     def test_indefinite_length_value(self):
@@ -54,9 +54,7 @@ class BERTLVTestCase(TestCase):
 
     def test_certificate(self):
         with open('chenqiang.me.cer', 'rb') as cert:
-            for tag, length, value_octets, offsets, stack in dfs_decoder(cert):
-                indent = ' ' * 2 * len(stack)
-                print(f'{indent} {tag} {length} [V]{"" if value_octets is None else value_octets.hex(" ")}')
+            decode_print(cert)
 
 
 

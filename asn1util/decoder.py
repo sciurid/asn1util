@@ -1,7 +1,9 @@
 from .tlv import *
 from .encoding import *
+from .oid import *
+from .real import *
+
 from collections import namedtuple
-from io import BytesIO
 
 
 DecoderStackItem = namedtuple('DecoderStackItem', ['tag', 'length', 'value_offset'])
@@ -56,7 +58,42 @@ def dfs_decoder(data: BinaryIO):
             stack.append(DecoderStackItem(tag, length, vof))
 
 
-def decode_print(data):
-    for tag, length, value_octets, offsets, stack in dfs_decoder(BytesIO(data)):
+VALUE_TYPE_DECODERS = {
+    TagNumber.EndOfContent: lambda value: None,
+    TagNumber.Boolean: BooleanValue.decode,
+    TagNumber.Integer: lambda value: int.from_bytes(value, byteorder='big', signed=True),
+    TagNumber.BitString: BitString.decode,
+    TagNumber.Null: lambda value: None,
+    TagNumber.ObjectIdentifier: ObjectIdentifier.decode,
+    TagNumber.Real: Real.decode,
+    TagNumber.Enumerated: lambda value: int.from_bytes(value, byteorder='big', signed=True),
+    TagNumber.UTF8String: lambda value: value.decode('utf-8'),
+    TagNumber.UniversalString: lambda value: value.decode("utf-32"),
+    TagNumber.BMPString: lambda value: value.decode('utf-16'),
+    TagNumber.PrintableString: decode_restricted_string,
+    TagNumber.NumericString: decode_restricted_string,
+    TagNumber.T61String: decode_restricted_string,
+    TagNumber.IA5String: decode_restricted_string,
+    TagNumber.UTCTime: decode_utc_time,
+    TagNumber.GeneralizedTime: lambda value: datetime.fromisoformat(value.decode('ascii')),
+    TagNumber.Time: lambda value: datetime.fromisoformat(value.decode('ascii')),
+    TagNumber.DateTime: lambda value: datetime.fromisoformat(value.decode('ascii')),
+    TagNumber.Date: lambda value: date.fromisoformat(value.decode('ascii')),
+    TagNumber.TimeOfDay: lambda value: time.fromisoformat(value.decode('ascii')),
+    TagNumber.Duration: lambda value: decode_duration(value)
+}
+
+
+def decode_print(file):
+    for tag, length, value_octets, offsets, stack in dfs_decoder(file):
         indent = ' ' * 2 * len(stack)
-        print(f'{indent} {tag} {length} [V]{"" if value_octets is None else value_octets.hex(" ")}')
+        if tag.is_primitive:
+            if tag.number in VALUE_TYPE_DECODERS:
+                handler = VALUE_TYPE_DECODERS[tag.number]
+                value_data = handler(value_octets)
+                value_string = 'N/A' if value_data is None else str(value_data)
+            else:
+                value_string = 'N/A' if value_octets is None else value_octets.hex(' ')
+        else:
+            value_string = ''
+        print(f'{offsets.t:<8d}{offsets.l:<8d}{offsets.v:<8d}{indent+str(tag):40s}{length.value:<6d}{value_string:<s}')

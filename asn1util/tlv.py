@@ -173,9 +173,9 @@ class Tag:
         text_pc = 'PC'
         tn = TagNumber(self._number) if self._number in TagNumber.values else None
         if tn is None:
-            return f'[T]{text_cls[self.cls]}{text_pc[self.pc]} {self.number:02d} "0x{self.octets.hex()}"'
+            return f'Unknown (0x{self.octets.hex()}:{text_cls[self.cls]}{text_pc[self.pc]}{self.number:02d})'
         else:
-            return f'[T]{text_cls[self.cls]}{text_pc[self.pc]} {tn.name}({self.number:02d}) "0x{self.octets.hex()}"'
+            return f'{tn.name} (0x{self.octets.hex()}:{text_cls[self.cls]}{text_pc[self.pc]}{self.number:02d})'
 
 
 class Length:

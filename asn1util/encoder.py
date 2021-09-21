@@ -4,30 +4,21 @@ from .oid import *
 from .real import *
 
 
-class NotSupportedValueException(ASN1EncodingException):
-    def __init__(self, value):
-        self.message = f'Value {value} of type {type(value)} is not supported.'
-
-
-def encode_boolean(value: Union[bool, int]):
-    if isinstance(value, bool):
-        return b'\xff' if value else b'\x00'
-    if isinstance(value, int):
-        return b'\xff' if value != 0 else b'\x00'
-    raise NotSupportedValueException(value)
-
-
-TAG_HANDLERS = {
+VALUE_TYPE_ENCODERS = {
     TagNumber.EndOfContent: (lambda: b''),
-    TagNumber.Boolean: encode_boolean,
+    TagNumber.Boolean: BooleanValue.encode,
     TagNumber.Integer: signed_int_to_bytes,
-    TagNumber.BitString: encode_bit_string,
+    TagNumber.BitString: BitString.encode,
     TagNumber.OctetString: (lambda value: value),
     TagNumber.Null: (lambda: b''),
     TagNumber.Enumerated: signed_int_to_bytes,
     TagNumber.UTF8String: (lambda value: value.encode('utf-8')),
     TagNumber.UniversalString: (lambda value: value.encode('utf-32')),
     TagNumber.BMPString: encode_bmp_string,
+    TagNumber.NumericString: encode_restricted_string,
+    TagNumber.PrintableString: encode_restricted_string,
+    TagNumber.T61String: encode_restricted_string,
+    TagNumber.IA5String: encode_restricted_string,
     TagNumber.ObjectIdentifier: ObjectIdentifier.encode,
     TagNumber.Real: Real.encode,
     TagNumber.GeneralizedTime: encode_generalized_time,
@@ -48,8 +39,8 @@ class Encoder:
     def append_primitive(self, tag_number: int, tag_class: TagClass = TagClass.UNIVERSAL, **kwargs):
         tag = Tag(tag_class, TagPC.PRIMITIVE, tag_number)
         tn = TagNumber(tag_number)
-        if tn in TAG_HANDLERS:
-            encoded = TAG_HANDLERS[tn](**kwargs)
+        if tn in VALUE_TYPE_ENCODERS:
+            encoded = VALUE_TYPE_ENCODERS[tn](**kwargs)
         else:
             raise NotImplementedError(tn)
 
