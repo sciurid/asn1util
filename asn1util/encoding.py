@@ -55,7 +55,7 @@ class BitString:
         encoded = bytearray()
         encoded.append(bs._unused)
         encoded.extend(bs._octets)
-        encoded[-1] &= ((0xff << unused) & 0xff)
+        encoded[-1] &= ((0xff << bs._unused) & 0xff)
         return encoded
 
     @staticmethod
@@ -89,17 +89,102 @@ def encode_bmp_string(value: str) -> bytes:
     return value.encode('utf-16')
 
 
-def encode_generalized_time(value: datetime, spec='auto') -> bytes:
-    return value.isoformat(timespec=spec).encode('ascii')
+class GeneralizedTime:
+    DATETIME_PATTERN = re.compile(r'^(?:([0-9]{4})(0[1-9]|1[0-2])([0-2][0-9]|3[01]))'
+                                  r'([01][0-9]|2[0-3])(?:([0-5][0-9])([0-5][0-9])?)?(\.[0-9]+)'
+                                  r'(Z|([+-])(0[0-9]|1[0-2])([0-5][0-9])?)?$')
+
+    @staticmethod
+    def encode(dt: datetime) -> bytes:
+        if dt.tzinfo is None:
+            if dt.microsecond == 0:
+                res = dt.strftime('%Y%m%d%H%M%S')
+            else:
+                res = dt.strftime('%Y%m%d%H%M%S%f')
+        else:
+            if dt.microsecond == 0:
+                res = dt.strftime('%Y%m%d%H%M%S%z')
+            else:
+                res = dt.strftime('%Y%m%d%H%M%S%f%z')
+        return res.encode('utf-8')
+
+    @staticmethod
+    def decode(value: bytes):
+        dt_str = value.decode('utf-8')
+        m = GeneralizedTime.DATETIME_PATTERN.match(dt_str)
+        if m is None:
+            raise NotSupportedValueException(f"Generalized Time: {dt_str}")
+        else:
+            year = m.group(1)
+            month = m.group(2)
+            day = m.group(3)
+            hour = m.group(4)
+            minute = m.group(5)
+            second = m.group(6)
+            frac = m.group(7)
+            if second is None:
+                if minute is None:
+                    frac_delta = timedelta(hours=float(frac))
+                    minute = '00'
+                else:
+                    frac_delta = timedelta(minutes=float(frac))
+                second = '00'
+            else:
+                frac_delta = timedelta(seconds=float(frac))
+
+            string_datetime = year + month + day + hour + minute + second
+
+            tz = m.group(8)
+            if tz is None:
+                dtf = '%Y%m%d%H%M%S'
+            else:
+                dtf = '%Y%m%d%H%M%S%z'
+                if tz == 'Z':
+                    string_datetime += '+0000'
+                else:
+                    tzsign = m.group(9)
+                    tzhour = m.group(10)
+                    tzminute = m.group(11)
+                    string_datetime += tzsign + tzhour + ('00' if tzminute is None else tzminute)
+
+            dt = datetime.strptime(string_datetime, dtf)
+            dt += frac_delta
+            return dt
 
 
-def encode_utc_time(value: datetime, spec='auto') -> bytes:
-    return datetime.strftime(value, '%y%m%d%H%M%SZ')
+class UTCTime:
+    UTC_TIME_PATTERN = re.compile(
+        r'^(?:([0-9]{2})(0[1-9]|1[0-2])([0-2][0-9]|3[01]))'
+        r'([01][0-9]|2[0-3])([0-5][0-9])([0-5][0-9])?'
+        r'(Z|[+-](?:0[0-9]|1[0-2])[0-5][0-9])$')
 
+    @staticmethod
+    def decode(value: bytes):
+        dt_str = value.decode('utf-8')
+        m = UTCTime.UTC_TIME_PATTERN.match(dt_str)
+        if m is None:
+            raise NotSupportedValueException(f"Generalized Time: {dt_str}")
+        else:
+            year = m.group(1)
+            month = m.group(2)
+            day = m.group(3)
+            hour = m.group(4)
+            minute = m.group(5)
+            second = m.group(6)
+            tz = m.group(7)
+            if second is None:
+                second = '00'
 
-def decode_utc_time(value: bytes) -> datetime:
-    string_value = value.decode('ascii')
-    return datetime.strptime(string_value, '%y%m%d%H%M%SZ').astimezone(timezone.utc)
+            if tz == 'Z':
+                tz = '+0000'
+            dt = datetime.strptime(year + month + day + hour + minute + second + tz, '%y%m%d%H%M%S%z')
+            return dt
+
+    @staticmethod
+    def encode(dt: datetime):
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc)
+        return dt.strftime('%y%m%d%H%M%SZ')
 
 
 def encode_time(value: time, spec='auto') -> bytes:

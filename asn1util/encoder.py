@@ -21,12 +21,12 @@ VALUE_TYPE_ENCODERS = {
     TagNumber.IA5String: encode_restricted_string,
     TagNumber.ObjectIdentifier: ObjectIdentifier.encode,
     TagNumber.Real: Real.encode,
-    TagNumber.GeneralizedTime: encode_generalized_time,
-    TagNumber.UTCTime: encode_utc_time,
+    TagNumber.GeneralizedTime: GeneralizedTime.encode,
+    TagNumber.UTCTime: UTCTime.encode,
     TagNumber.Time: encode_time,
     TagNumber.TimeOfDay: encode_time,
     TagNumber.Date: encode_date,
-    TagNumber.DateTime: encode_generalized_time,
+    TagNumber.DateTime: GeneralizedTime.encode,
     TagNumber.Duration: encode_duration
 }
 
