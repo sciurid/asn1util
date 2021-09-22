@@ -1,13 +1,6 @@
 from unittest import TestCase, skip
-from io import BytesIO
 from asn1util import *
 
-
-# def decode_print(data):
-#     for tag, length, value_octets, offsets, stack in dfs_decoder(BytesIO(data)):
-#         indent = ' ' * 2 * len(stack)
-#         print(f'{indent} {tag} {length} [V]{"" if value_octets is None else value_octets.hex(" ")}')
-#
 
 class BERTLVTestCase(TestCase):
     def test_indefinite_length_value(self):
@@ -21,7 +14,7 @@ class BERTLVTestCase(TestCase):
 
     @skip
     def test_bit_string(self):
-        o, l = decode_bit_string(bytes.fromhex('06 6e 5d e0'))
+        o, l = BitString.decode(bytes.fromhex('06 6e 5d e0'))
         print(o.hex())
         print(repr_bit_string(o, l))
         print(Encoder._encode_bit_string(o, l).hex())

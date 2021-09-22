@@ -23,11 +23,11 @@ VALUE_TYPE_ENCODERS = {
     TagNumber.Real: Real.encode,
     TagNumber.GeneralizedTime: GeneralizedTime.encode,
     TagNumber.UTCTime: UTCTime.encode,
-    TagNumber.Time: encode_time,
-    TagNumber.TimeOfDay: encode_time,
-    TagNumber.Date: encode_date,
+    TagNumber.Time: None,
+    TagNumber.TimeOfDay: None,
+    TagNumber.Date: None,
     TagNumber.DateTime: GeneralizedTime.encode,
-    TagNumber.Duration: encode_duration
+    TagNumber.Duration: None
 }
 
 

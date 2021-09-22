@@ -76,11 +76,11 @@ VALUE_TYPE_DECODERS = {
     TagNumber.IA5String: decode_restricted_string,
     TagNumber.UTCTime: UTCTime.decode,
     TagNumber.GeneralizedTime: GeneralizedTime.decode,
-    TagNumber.Time: lambda value: datetime.fromisoformat(value.decode('ascii')),
-    TagNumber.DateTime: lambda value: datetime.fromisoformat(value.decode('ascii')),
-    TagNumber.Date: lambda value: date.fromisoformat(value.decode('ascii')),
-    TagNumber.TimeOfDay: lambda value: time.fromisoformat(value.decode('ascii')),
-    TagNumber.Duration: lambda value: decode_duration(value)
+    TagNumber.Time: None,
+    TagNumber.DateTime: None,
+    TagNumber.Date: None,
+    TagNumber.TimeOfDay: None,
+    TagNumber.Duration: None
 }
 
 
