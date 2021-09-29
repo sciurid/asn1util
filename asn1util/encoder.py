@@ -5,12 +5,12 @@ from .real import *
 
 
 VALUE_TYPE_ENCODERS = {
-    TagNumber.EndOfContent: (lambda: b''),
+    TagNumber.EndOfContent: (lambda value: b''),
     TagNumber.Boolean: BooleanValue.encode,
     TagNumber.Integer: signed_int_to_bytes,
     TagNumber.BitString: BitString.encode,
     TagNumber.OctetString: (lambda value: value),
-    TagNumber.Null: (lambda: b''),
+    TagNumber.Null: (lambda value: b''),
     TagNumber.Enumerated: signed_int_to_bytes,
     TagNumber.UTF8String: (lambda value: value.encode('utf-8')),
     TagNumber.UniversalString: (lambda value: value.encode('utf-32')),
@@ -76,6 +76,7 @@ class Encoder:
         :param value:
         :return:
         """
+        # assert isinstance(value, bytes)
         length = Length(len(value))
         segment = tag.octets + length.octets + value
         if len(self._stack) == 0:

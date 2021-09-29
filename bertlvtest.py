@@ -1,5 +1,6 @@
 from unittest import TestCase, skip
 from asn1util import *
+import traceback
 
 
 class BERTLVTestCase(TestCase):
@@ -48,6 +49,29 @@ class BERTLVTestCase(TestCase):
     def test_certificate(self):
         with open('chenqiang.me.cer', 'rb') as cert:
             decode_print(cert)
+
+    def test_der_reconstruct(self):
+        with open('chenqiang.me.cer', 'rb') as cert:
+            for tlvitem in dfs_decoder(cert):
+                encoder = Encoder()
+                tag = tlvitem.tag
+                try:
+                    if tag.is_primitive:
+                        if tag.number in VALUE_TYPE_DECODERS:
+                            handler = VALUE_TYPE_DECODERS[tag.number]
+                            value_data = handler(tlvitem.value_octets)
+                            encoder.append_primitive(tag_class=tag.cls, tag_number=tag.number, value=value_data)
+                        else:
+                            encoder.append_primitive(tag_class=tag.cls, tag_number=tag.number, value=tlvitem.value_octets)
+                        print(tag, tlvitem.tlv_octets.hex(' '))
+                        print(tag, encoder.data.hex(' '))
+                    else:
+                        pass
+                except Exception as e:
+                    print(tag, e)
+                    traceback.print_exc()
+                    continue
+
 
 
 

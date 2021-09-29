@@ -13,9 +13,8 @@ class NotSupportedValueException(ASN1EncodingException):
 
 
 class BooleanValue:
-
     @staticmethod
-    def encode(value: Union[bool, int]):
+    def encode(value: Union[bool, int]) -> bytes:
         if isinstance(value, bool):
             return b'\xff' if value else b'\x00'
         if isinstance(value, int):
@@ -23,7 +22,7 @@ class BooleanValue:
         raise NotSupportedValueException(value)
 
     @staticmethod
-    def decode(value: bytes):
+    def decode(value: bytes) -> bool:
         if len(value) != 1:
             raise NotSupportedValueException(value)
         return value[0] != 0
@@ -50,8 +49,11 @@ class BitString:
         return header + self._octets.hex(' ')
 
     @staticmethod
-    def encode(octets: bytes, bit_length: int = None):
-        bs = BitString(octets, bit_length)
+    def encode(value: Union[bytes, 'BitString'], bit_length: int = None) -> bytes:
+        if isinstance(value, BitString):
+            bs = value
+        else:
+            bs = BitString(value, bit_length)
         encoded = bytearray()
         encoded.append(bs._unused)
         encoded.extend(bs._octets)
@@ -90,7 +92,7 @@ def encode_bmp_string(value: str) -> bytes:
 
 
 class GeneralizedTime:
-    DATETIME_PATTERN = re.compile(r'^(?:([0-9]{4})(0[1-9]|1[0-2])([0-2][0-9]|3[01]))'
+    DATETIME_PATTERN = re.compile(r'^([0-9]{4})(0[1-9]|1[0-2])([0-2][0-9]|3[01])'
                                   r'([01][0-9]|2[0-3])(?:([0-5][0-9])([0-5][0-9])?)?(\.[0-9]+)'
                                   r'(Z|([+-])(0[0-9]|1[0-2])([0-5][0-9])?)?$')
 
@@ -115,13 +117,8 @@ class GeneralizedTime:
         if m is None:
             raise NotSupportedValueException(f"Generalized Time: {dt_str}")
         else:
-            year = m.group(1)
-            month = m.group(2)
-            day = m.group(3)
-            hour = m.group(4)
-            minute = m.group(5)
-            second = m.group(6)
-            frac = m.group(7)
+            year, month, day, hour, minute, second, frac \
+                = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5), m.group(6), m.group(7)
             if second is None:
                 if minute is None:
                     frac_delta = timedelta(hours=float(frac))
@@ -154,24 +151,19 @@ class GeneralizedTime:
 
 class UTCTime:
     UTC_TIME_PATTERN = re.compile(
-        r'^(?:([0-9]{2})(0[1-9]|1[0-2])([0-2][0-9]|3[01]))'
+        r'^([0-9]{2})(0[1-9]|1[0-2])([0-2][0-9]|3[01])'
         r'([01][0-9]|2[0-3])([0-5][0-9])([0-5][0-9])?'
         r'(Z|[+-](?:0[0-9]|1[0-2])[0-5][0-9])$')
 
     @staticmethod
-    def decode(value: bytes):
-        dt_str = value.decode('utf-8')
+    def decode(octets: bytes):
+        dt_str = octets.decode('utf-8')
         m = UTCTime.UTC_TIME_PATTERN.match(dt_str)
         if m is None:
             raise NotSupportedValueException(f"Generalized Time: {dt_str}")
         else:
-            year = m.group(1)
-            month = m.group(2)
-            day = m.group(3)
-            hour = m.group(4)
-            minute = m.group(5)
-            second = m.group(6)
-            tz = m.group(7)
+            year, month, day, hour, minute, second, tz \
+                = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5), m.group(6), m.group(7)
             if second is None:
                 second = '00'
 
@@ -181,10 +173,10 @@ class UTCTime:
             return dt
 
     @staticmethod
-    def encode(dt: datetime):
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone.utc)
-        return dt.strftime('%y%m%d%H%M%SZ')
+    def encode(value: datetime):
+        if value.tzinfo is not None:
+            value = value.astimezone(timezone.utc)
+        return value.strftime('%y%m%d%H%M%SZ').encode('utf-8')
 
 
 def encode_time(value: time, spec='auto') -> bytes:

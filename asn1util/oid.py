@@ -1,6 +1,43 @@
 from .tlv import InvalidValue
 from typing import Iterable, Union
 import re
+import requests
+from bs4 import BeautifulSoup
+import pickle
+
+
+class OIDRepo:
+    def __init__(self):
+        try:
+            with open('.oid', 'rb') as file:
+                self._local = pickle.load(file)
+        except FileNotFoundError:
+            self._local = {}
+
+    def search(self, oid):
+        if oid in self._local:
+            return self._local[oid]
+        else:
+            return self.remote_query(oid)
+
+    def remote_query(self, oid):
+        resp = requests.get(r"http://oid-info.com/get/" + oid)
+        bs = BeautifulSoup(resp.text, 'lxml')
+        if(len(bs.select('tr[bgcolor="#CCCCCC"]'))) == 0:
+            return None
+
+        notion = bs.select('tr[bgcolor="#CCCCCC"]')[0].select('textarea')[0].text
+        description = bs.select('tr[bgcolor="#CCCCCC"]')[1].select('table td')[2].text.strip()
+        self._local[oid] = (notion, description)
+        try:
+            with open('.oid', 'wb') as file:
+                pickle.dump(self._local, file)
+        except IOError:
+            pass
+        return notion, description
+
+
+OID_REPO = OIDRepo()
 
 
 class InvalidObjectIdentifier(InvalidValue):
@@ -23,7 +60,7 @@ class ObjectIdentifier:
         elif self._components[0] == 2:
             return
         else:
-            raise InvalidObjectIdentifier('ObjectIdentifier value 1 shoud be 0, 1 or 2.')
+            raise InvalidObjectIdentifier('ObjectIdentifier value 1 should be 0, 1 or 2.')
 
     @property
     def components(self):
@@ -31,6 +68,11 @@ class ObjectIdentifier:
 
     def __repr__(self):
         return '.'.join([str(i) for i in self._components])
+
+    def __str__(self):
+        oid = repr(self)
+        notion, description = OID_REPO.search(oid)
+        return f'{oid} ({description}) [{notion}]'
 
     def to_octets(self) -> bytes:
         data = [self.components[0] * 40 + self.components[1]]
@@ -47,8 +89,10 @@ class ObjectIdentifier:
         return octets
 
     @staticmethod
-    def encode(value: Union[str, Iterable[int]]):
-        if isinstance(value, str):
+    def encode(value: Union['ObjectIdentifier', str, Iterable[int]]):
+        if isinstance(value, ObjectIdentifier):
+            return value.to_octets()
+        elif isinstance(value, str):
             return ObjectIdentifier.decode_string(value).to_octets()
         elif isinstance(value, Iterable):
             return ObjectIdentifier(value).to_octets()
@@ -86,6 +130,4 @@ class ObjectIdentifier:
             components.insert(0, 2)
 
         return ObjectIdentifier(components)
-
-
 
