@@ -50,6 +50,12 @@ class BERTLVTestCase(TestCase):
         with open('chenqiang.me.cer', 'rb') as cert:
             decode_print(cert)
 
+
+    def test_case1(self):
+        data = bytes.fromhex('6f 32 84 09 a0 00 00 00 03 86 98 07 01 a5 25 9f 08 01 01 9f 0c 1e 62 64 00 22 33 33 00 01 03 01 00 00 00 00 00 00 10 01 cb 9f 20 13 01 01 20 15 12 31 55 66')
+        for item in dfs_decoder(data):
+            print(item)
+
     def test_der_reconstruct(self):
         with open('chenqiang.me.cer', 'rb') as cert:
             for tlvitem in dfs_decoder(cert):

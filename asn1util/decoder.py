@@ -4,6 +4,7 @@ from .oid import *
 from .real import *
 
 from collections import namedtuple
+from io import BytesIO
 
 
 DecoderStackItem = namedtuple('DecoderStackItem', ['tag', 'length', 'offsets'])
@@ -11,7 +12,7 @@ TLVOffsets = namedtuple('TLVOffsets', ['t', 'l', 'v'])
 TLVItem = namedtuple('TLVItem', ['tag', 'length', 'value_octets', 'offsets', 'stack', 'decoded_value', 'tlv_octets'])
 
 
-def dfs_decoder(data: BinaryIO, constructed_end_handler=None):
+def dfs_decoder(data: Union[bytes, BinaryIO], constructed_end_handler=None):
     """
     TLV生成器，按照DER编码顺序逐个解析TLV，即深度优先遍历（DFS）。
     解析到原始类型TLV，则在TLV结束后返回TLVItem。
@@ -20,6 +21,8 @@ def dfs_decoder(data: BinaryIO, constructed_end_handler=None):
     :param constructed_end_handler: 结构类型TLV结束解析时的处理函数，参数为TLVItem。
     :return:
     """
+    if isinstance(data, bytes):
+        data = BytesIO(data)
     stack = []  # 标记当前结构路径的栈
     while True:
         tof = data.tell()  # tag offset
@@ -42,6 +45,8 @@ def dfs_decoder(data: BinaryIO, constructed_end_handler=None):
             if tag.number in VALUE_TYPE_DECODERS:
                 handler = VALUE_TYPE_DECODERS[tag.number]
                 decoded_value = handler(value_octets)
+            else:
+                decoded_value = None
             tlv_end_offset = data.tell()
             data.seek(tof)
             # 返回基本类型

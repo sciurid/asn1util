@@ -1,5 +1,8 @@
 from enum import IntEnum
 from typing import BinaryIO, Union
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class InvalidTLV(Exception):
@@ -239,4 +242,3 @@ class Length:
             return f"[L]{self._length_value}"
         else:
             return "[L]INF"
-
