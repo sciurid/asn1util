@@ -1,6 +1,7 @@
 from enum import IntEnum
 from typing import BinaryIO, Union
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -17,14 +18,14 @@ class InvalidValue(InvalidTLV):
 
 class TagClass(IntEnum):
     UNIVERSAL = 0x00
-    APPLICATION = 0x01
-    CONTEXT_SPECIFIC = 0x02
-    PRIVATE = 0x03
+    APPLICATION = 0x40
+    CONTEXT_SPECIFIC = 0x80
+    PRIVATE = 0xC0
 
 
 class TagPC(IntEnum):
     PRIMITIVE = 0x00
-    CONSTRUCTED = 0x01
+    CONSTRUCTED = 0x20
 
 
 class TagNumber(IntEnum):
@@ -75,12 +76,25 @@ TagNumber.constructed_set = {
 
 
 class Tag:
-    def __init__(self, clazz: TagClass, pc: TagPC, number: int):
-        self._cls = clazz
-        self._pc = pc
-        self._number = number
-        self._octets = self.encode()
+    def __init__(self, octets: Union[bytes, bytearray]):
+        assert octets, 'Tag octets should not be None or empty.'
+        self._octets = bytes(octets)
+        self._eval()
         self._validate()
+
+    def _eval(self):
+        initial = self._octets[0]
+        self._cls = TagClass(initial & 0xC0)
+        self._pc = TagPC(initial & 0x20)
+        if self.low_tag_number:
+            self._number = initial & 0x1f
+        else:
+            number = 0
+            for octet in self._octets[1:]:
+                number = (number << 7) + (octet & 0x3f)
+            else:
+                assert octet & 0x80 == 0, 'High tag number octets do not end with b8 = 0.'
+            self._number = number
 
     def _validate(self):
         if self._cls != TagClass.UNIVERSAL:
@@ -98,19 +112,19 @@ class Tag:
 
     @property
     def cls(self) -> TagClass:
-        return TagClass(self._cls)
+        return TagClass(self._octets[0] & 0xC0)
 
     @property
     def pc(self) -> TagPC:
-        return TagPC(self._pc)
+        return TagPC(self._octets[0] & 0x20)
 
     @property
     def is_primitive(self) -> bool:
-        return self._pc == TagPC.PRIMITIVE
+        return self.pc == TagPC.PRIMITIVE
 
     @property
-    def is_low_tag_number(self) -> bool:
-        return self._number < 0x1f
+    def low_tag_number(self) -> bool:
+        return len(self._octets) == 1 and 0 <= (self._octets[0] & 0x1F) < 0x1F
 
     @property
     def number(self) -> int:
@@ -120,65 +134,69 @@ class Tag:
     def octets(self) -> bytes:
         return self._octets
 
-    def encode(self):
-        tag_initial = (self._cls << 6) | (self._pc << 5)
-        if self._number < 0x1f:
-            tag_initial |= self._number
-            return tag_initial.to_bytes(1, byteorder='big')
+    @property
+    def value(self):
+        return self.octets.hex().upper()
+
+    @staticmethod
+    def encode(cls: TagClass, pc: TagPC, number: int):
+        tag_initial = cls | pc
+        if number < 0x1f:
+            tag_initial |= number
+            return Tag(bytes([tag_initial]))
         else:
             res = bytearray()
-            number = self._number
             while number > 0:
                 res.append((number & 0x7f) | 0x80)
                 number >>= 7
             res[0] &= 0x7f
             res.append(tag_initial | 0x1f)
             res.reverse()
-            return bytes(res)
+            return Tag(bytes(res))
 
     @staticmethod
     def decode(data: BinaryIO):
         buffer = data.read(1)
         if len(buffer) == 0:  # EOF of data
             return None
+
+        octets = bytearray()
         tag_initial = buffer[0]
+        octets.append(tag_initial)
 
         short_number = tag_initial & 0x1f
         if short_number == 0x1f:  # High tag number form
-            buffer = data.read(1)
-            if len(buffer) == 0:
-                raise InvalidTLV("High tag number with no bytes following.")
-            number_octet = buffer[0]
-            if (number_octet & 0x7f) == 0:
-                raise InvalidTLV("High tag number with b7 to b1 being 0 in the first following octet.")
-
-            number = 0
-            while (number_octet & 0x80) != 0:
-                number = (number << 7) + (number_octet & 0x7f)
-                buffer = data.read(1)
-                if len(buffer) == 0:
-                    raise InvalidTLV("High tag number bytes not end. (No following byte or b8 == 1 for the last byte)")
-                number_octet = buffer[0]
+            while buffer := data.read(1):
+                octet = buffer[0]
+                octets.append(octet)
+                if octet & 0x80 == 0:
+                    break
             else:
-                number = (number << 7) + (number_octet & 0x7f)
-
-            if number < 0x1f:
-                raise InvalidTLV("High tag number is less than 31.")
+                raise InvalidTLV("High tag number bytes not end. (No following byte or b8 == 1 for the last byte)")
+            if len(octets) == 1:
+                raise InvalidTLV("High tag number with no bytes following.")
+            elif octets[1] & 0x7f == 0:
+                raise InvalidTLV("High tag number with b7 to b1 being 0 in the first following octet.")
+            return Tag(octets)
         else:
-            number = short_number
-        clazz = TagClass((tag_initial & 0xc0) >> 6)
-        pc = TagPC((tag_initial & 0x20) >> 5)
+            return Tag(bytes([tag_initial]))
 
-        return Tag(clazz, pc, number)
+    TAG_CLASS_ABBR = {
+        TagClass.UNIVERSAL: 'UNIV',
+        TagClass.APPLICATION: 'APP',
+        TagClass.CONTEXT_SPECIFIC: 'CTXT-SPEC',
+        TagClass.PRIVATE: 'PRIV'
+    }
 
     def __repr__(self):
-        text_cls = 'UACP'
-        text_pc = 'PC'
-        tn = TagNumber(self._number) if self._number in TagNumber.values else None
-        if tn is None:
-            return f'Unknown (0x{self.octets.hex()}:{text_cls[self.cls]}{text_pc[self.pc]}{self.number:02d})'
+        if self.cls == TagClass.UNIVERSAL:
+            tn = TagNumber(self.number) if self.number in TagNumber.values else None
+            if tn is not None:
+                return f'{self.value} ({tn.name})'
+            else:
+                return f'{self.value} (UNKNOWN)'
         else:
-            return f'{tn.name} (0x{self.octets.hex()}:{text_cls[self.cls]}{text_pc[self.pc]}{self.number:02d})'
+            return f'{self.value} ({Tag.TAG_CLASS_ABBR[self.cls]})'
 
 
 class Length:

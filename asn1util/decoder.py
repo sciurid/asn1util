@@ -42,8 +42,8 @@ def dfs_decoder(data: Union[bytes, BinaryIO], constructed_end_handler=None):
             value_octets = data.read(length.value)  # value数据字节
             if len(value_octets) < length.value:  # 剩余字节不足
                 raise InvalidTLV(f"Not enough value octets. {length.value:d} required but {len(value_octets):d} remains.")
-            if tag.number in VALUE_TYPE_DECODERS:
-                handler = VALUE_TYPE_DECODERS[tag.number]
+            if tag.number in UNIVERSAL_DECODERS:
+                handler = UNIVERSAL_DECODERS[tag.number]
                 decoded_value = handler(value_octets)
             else:
                 decoded_value = None
@@ -81,12 +81,14 @@ def dfs_decoder(data: Union[bytes, BinaryIO], constructed_end_handler=None):
                     if tag.number == 0 and length.value == 0:  # 遇到EOC标记结尾，退栈
                         stack.pop()
                         continue
+                    else:
+                        break
         else:
             yield TLVItem(tag, length, None, offsets, stack, None, None)  # 返回结构类型
             stack.append(DecoderStackItem(tag, length, TLVOffsets(tof, lof, vof)))
 
 
-VALUE_TYPE_DECODERS = {
+UNIVERSAL_DECODERS = {
     TagNumber.EndOfContent: lambda value: None,
     TagNumber.Boolean: BooleanValue.decode,
     TagNumber.Integer: lambda value: int.from_bytes(value, byteorder='big', signed=True),
@@ -112,18 +114,33 @@ VALUE_TYPE_DECODERS = {
 }
 
 
-def decode_print(file):
+SMART_CARD_TAGS = {}
+with open(Path(__file__).parent.joinpath("SmartCardTags.txt"), "r") as tags_file:
+    for line in tags_file:
+        tag, name = line.strip().partition("=")[::2]
+        SMART_CARD_TAGS[tag] = name
+
+
+def decode_print(file, tag_names: dict = None):
     for tlvitem in dfs_decoder(file):
         indent = ' ' * 2 * len(tlvitem.stack)
         if tlvitem.tag.is_primitive:
-            if tlvitem.tag.number in VALUE_TYPE_DECODERS:
-                handler = VALUE_TYPE_DECODERS[tlvitem.tag.number]
+            if tlvitem.tag.cls == TagClass.UNIVERSAL and tlvitem.tag.number in UNIVERSAL_DECODERS:
+                handler = UNIVERSAL_DECODERS[tlvitem.tag.number]
                 value_data = handler(tlvitem.value_octets)
                 value_string = 'N/A' if value_data is None else str(value_data)
             else:
                 value_string = 'N/A' if tlvitem.value_octets is None else tlvitem.value_octets.hex(' ')
         else:
             value_string = ''
+
         print(f'{tlvitem.offsets.t:<8d}{tlvitem.offsets.l:<8d}{tlvitem.offsets.v:<8d}'
-              f'{indent+str(tlvitem.tag):40s}{tlvitem.length.value:<6d}{value_string:<s}')
+              f'{indent+str(tlvitem.tag):40s}{str(tlvitem.length.value) if tlvitem.length.is_definite else "INF":<6s}'
+              f'{value_string:<s}')
+        if tag_names:
+            if tlvitem.tag.value in tag_names:
+                print(' ' * 24 + indent + tag_names[tlvitem.tag.value])
+            else:
+                print(' ' * 24 + indent + '[UNKNOWN]')
+
         # print(f'{tlvitem.tlv_octets.hex(" ")}' if tlvitem.tlv_octets is not None else '')

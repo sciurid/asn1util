@@ -5,7 +5,7 @@ import traceback
 
 class BERTLVTestCase(TestCase):
     def test_indefinite_length_value(self):
-        decode_print(b'\x30\x80\x03\x03\x31\x32\x33\x03\x04\x34\x35\x36\x37\x00\x00')
+        decode_print(b'\x30\x80\x04\x03\x31\x32\x33\x04\x04\x34\x35\x36\x37\x00\x00')
 
     @skip
     def test_indefinite_length_value_error(self):
@@ -27,7 +27,7 @@ class BERTLVTestCase(TestCase):
         encoder.append_primitive(TagNumber.Real, value=123.4)
         encoder.append_primitive(TagNumber.Real, value=10.625, base=16)
         encoder.append_primitive(TagNumber.OctetString, value=b'\x01\x02\x03')
-        encoder.append_primitive(TagNumber.Null)
+        encoder.append_primitive(TagNumber.Null, value=None)
         encoder.append_primitive(TagNumber.UTF8String, value='我的世界')
         encoder.append_primitive(TagNumber.UniversalString, value='我的世界')
         encoder.append_primitive(TagNumber.ObjectIdentifier, value='1.2.840.113549')
@@ -52,7 +52,8 @@ class BERTLVTestCase(TestCase):
 
 
     def test_case1(self):
-        data = bytes.fromhex('6f 32 84 09 a0 00 00 00 03 86 98 07 01 a5 25 9f 08 01 01 9f 0c 1e 62 64 00 22 33 33 00 01 03 01 00 00 00 00 00 00 10 01 cb 9f 20 13 01 01 20 15 12 31 55 66')
+        data = bytes.fromhex('6f 16 84 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 a5 02 88 00')
+        decode_print(data, SMART_CARD_TAGS)
         for item in dfs_decoder(data):
             print(item)
 
@@ -63,8 +64,8 @@ class BERTLVTestCase(TestCase):
                 tag = tlvitem.tag
                 try:
                     if tag.is_primitive:
-                        if tag.number in VALUE_TYPE_DECODERS:
-                            handler = VALUE_TYPE_DECODERS[tag.number]
+                        if tag.number in UNIVERSAL_DECODERS:
+                            handler = UNIVERSAL_DECODERS[tag.number]
                             value_data = handler(tlvitem.value_octets)
                             encoder.append_primitive(tag_class=tag.cls, tag_number=tag.number, value=value_data)
                         else:

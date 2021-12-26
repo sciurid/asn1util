@@ -3,6 +3,7 @@ from .util import *
 from decimal import Decimal, Context, getcontext
 from typing import Union
 import struct
+from enum import IntEnum
 
 
 class InvalidReal(InvalidValue):
@@ -10,20 +11,34 @@ class InvalidReal(InvalidValue):
         self.message = message
 
 
+class SpecialRealValue(IntEnum):
+    PLUS_INFINITY = 0x40
+    MINUS_INFINITY = 0x41
+    NOT_A_NUMBER = 0x42
+    MINUS_ZERO = 0x43
+
+
 class Real:
     PLUS_INFINITY = 0x40
     MINUS_INFINITY = 0x41
     NOT_A_NUMBER = 0x42
     MINUS_ZERO = 0x43
-    SPECIALS = (PLUS_INFINITY, MINUS_INFINITY, NOT_A_NUMBER, MINUS_ZERO)
+    SPECIALS = (SpecialRealValue.PLUS_INFINITY, SpecialRealValue.MINUS_INFINITY,
+                SpecialRealValue.NOT_A_NUMBER, SpecialRealValue.MINUS_ZERO)
 
-    def __init__(self, value: Decimal, special: int = None):
+    def __init__(self, value: Decimal, special: Union[int, SpecialRealValue] = None):
         self._value = value.normalize()
-        assert special is None or special in Real.SPECIALS
-        self._special = special
+        self._special = SpecialRealValue(special) if special else None
 
     def is_special(self):
         return self._special is not None
+
+    def __repr__(self):
+        if self._special:
+            return self._special.name
+        else:
+            return str(self._value)
+
 
     @property
     def special(self):
