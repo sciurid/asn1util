@@ -185,7 +185,6 @@ class Tag:
         TagClass.UNIVERSAL: 'UNIV',
         TagClass.APPLICATION: 'APP',
         TagClass.CONTEXT_SPECIFIC: 'CTXT-SPEC',
-        TagClass.PRIVATE: 'PRIV'
     }
 
     def __repr__(self):

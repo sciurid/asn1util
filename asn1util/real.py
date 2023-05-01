@@ -39,7 +39,6 @@ class Real:
         else:
             return str(self._value)
 
-
     @property
     def special(self):
         return self._special

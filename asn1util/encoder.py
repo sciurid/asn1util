@@ -36,7 +36,7 @@ class Encoder:
         self._stack = []
         self._data = bytearray()
 
-    def append_primitive(self, tag_number: int, tag_class: TagClass = TagClass.UNIVERSAL,  **kwargs):
+    def append_primitive(self, tag_number: int, tag_class: TagClass = TagClass.UNIVERSAL, **kwargs):
         tag = Tag.encode(tag_class, TagPC.PRIMITIVE, tag_number)
         tn = TagNumber(tag_number)
         if tn in VALUE_TYPE_ENCODERS:

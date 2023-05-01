@@ -28,6 +28,7 @@ class OIDRepo:
 
         notion = bs.select('tr[bgcolor="#CCCCCC"]')[0].select('textarea')[0].text
         description = bs.select('tr[bgcolor="#CCCCCC"]')[1].select('table td')[2].text.strip()
+
         self._local[oid] = (notion, description)
         try:
             with open('.oid', 'wb') as file:
@@ -68,11 +69,6 @@ class ObjectIdentifier:
 
     def __repr__(self):
         return '.'.join([str(i) for i in self._components])
-
-    def __str__(self):
-        oid = repr(self)
-        notion, description = OID_REPO.search(oid)
-        return f'{oid} ({description}) [{notion}]'
 
     def to_octets(self) -> bytes:
         data = [self.components[0] * 40 + self.components[1]]

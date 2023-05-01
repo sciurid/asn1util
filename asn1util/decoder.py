@@ -16,7 +16,7 @@ def dfs_decoder(data: Union[bytes, BinaryIO], constructed_end_handler=None):
     """
     TLV生成器，按照DER编码顺序逐个解析TLV，即深度优先遍历（DFS）。
     解析到原始类型TLV，则在TLV结束后返回TLVItem。
-    解析到结构类型TLV，则则TLV的T、L结束后返回TLVItem；继续执行时开始解析结构内的TLV。
+    解析到结构类型TLV，则在TLV的T、L结束后返回TLVItem；继续执行时开始解析结构内的TLV。
     :param data: 二进制流
     :param constructed_end_handler: 结构类型TLV结束解析时的处理函数，参数为TLVItem。
     :return:
@@ -112,13 +112,6 @@ UNIVERSAL_DECODERS = {
     TagNumber.TimeOfDay: None,
     TagNumber.Duration: None
 }
-
-
-SMART_CARD_TAGS = {}
-with open(Path(__file__).parent.joinpath("SmartCardTags.txt"), "r") as tags_file:
-    for line in tags_file:
-        tag, name = line.strip().partition("=")[::2]
-        SMART_CARD_TAGS[tag] = name
 
 
 def decode_print(file, tag_names: dict = None):
