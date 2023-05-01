@@ -20,9 +20,9 @@ class RealValueTestCase(TestCase):
         setcontext(ExtendedContext)
         print("Precision:", getcontext().prec)
         for val in (Decimal('123.456'), 10.625,  0.342):
-            encoded = Real.encode_base2(Decimal(val), 16, 4)
+            encoded = Real.encode_float(Decimal(val), 16, 4)
             real = Real.decode(encoded)
             print(f'Base16: {val} => {encoded.hex(" ")} => {real.value}: {val == real.value}')
-            encoded = Real.encode_base10(Decimal(val))
+            encoded = Real.encode_decimal(Decimal(val))
             real = Real.decode(encoded)
             print(f'Base10: {val} => {encoded.hex(" ")} => {real.value}: {val == real.value}')
