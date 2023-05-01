@@ -4,6 +4,9 @@ from decimal import Decimal, Context, getcontext
 from typing import Union
 import struct
 from enum import IntEnum
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class InvalidReal(InvalidValue):
@@ -93,22 +96,59 @@ class Real:
         return s, n, e
 
     @staticmethod
-    def decompose_ieee754_to_sne_of_two(value: float, double: bool = True):
+    def decompose_ieee754_double(encoded: bytes) -> (int, int, int):
+        sign = encoded[0] >> 7
+        exp = (((encoded[0] & 0x7f) << 4) | ((encoded[1] >> 4) & 0x0f))
+        fraction = int.from_bytes(encoded[2:], byteorder='big', signed=False) + ((encoded[1] & 0x0f) << 48)
+        if exp == 0:  # 零或次正规数
+            if fraction == 0:
+                if sign == 0:
+                    return 0, 0, 0
+                else:
+                    raise SpecialRealValue.MINUS_ZERO
+            else:
+                return (-1 if sign else 0), fraction, -1074  # 小数部分左移52位成为整数，次正规数的指数-1022再减52
+        elif exp == 0x07ff:  # 无穷大或NaN
+            if fraction:
+                raise SpecialRealValue.NOT_A_NUMBER
+            else:
+                raise SpecialRealValue.MINUS_INFINITY if sign else SpecialRealValue.PLUS_INFINITY
+        else:
+            fraction |= 0x10 << 48  # 补上整数部分的1
+            return (-1 if sign else 0), fraction, exp - 1075  # 小数部分左移52位成为整数，正规数的指数减去1023再减52
+
+    @staticmethod
+    def decompose_ieee754_single(encoded: bytes) -> (int, int, int):
+        sign = encoded[0] >> 7
+        exp = (((encoded[0] & 0x7f) << 1) | ((encoded[1] >> 7) & 0x01))
+        fraction = int.from_bytes(encoded[2:], byteorder='big', signed=False) + ((encoded[1] & 0x7f) << 16)
+        if exp == 0:  # 零或次正规数
+            if fraction == 0:
+                if sign == 0:
+                    return 0, 0, 0
+                else:
+                    raise SpecialRealValue.MINUS_ZERO
+            else:
+                return (-1 if sign else 0), fraction, -149  # 小数部分左移52位成为整数，次正规数的指数-126再减23
+        elif exp == 0xff:  # 无穷大或NaN
+            if fraction:
+                raise SpecialRealValue.NOT_A_NUMBER
+            else:
+                raise SpecialRealValue.MINUS_INFINITY if sign else SpecialRealValue.PLUS_INFINITY
+        else:
+            fraction |= 0x80 << 16  # 补上整数部分的1
+            return (-1 if sign else 0), fraction, exp - 150   # 小数部分左移52位成为整数，正规数的指数减去127再减23
+
+    @staticmethod
+    def decompose_float_to_sne_of_two(value: float, double: bool = True):
         if value == 0:
             return 0, 0, 0
-        s = -1 if value < 0 else 0
+
         if double:
-            encoded = struct.pack('>d', value)
-            exp = (((encoded[0] & 0x7f) << 4) | ((encoded[1] >> 4) & 0x0f))
-            exp = exp - 1023
-            n = int.from_bytes(encoded[2:], byteorder='big', signed=False) + ((encoded[1] & 0x0f | 0x10) << 48)
-            e = exp - 52
+            s, n, e = Real.decompose_ieee754_double(struct.pack('>d', value))
         else:
-            encoded = struct.pack('>f', value)
-            exp = (((encoded[0] & 0x7f) << 1) | ((encoded[1] >> 7) & 0x01))
-            exp = exp - 127
-            n = int.from_bytes(encoded[2:], byteorder='big', signed=False) + ((encoded[1] & 0x7f | 0x80) << 16)
-            e = exp - 23
+            s, n, e = Real.decompose_ieee754_single(struct.pack('>f', value))
+        assert (s == -1) if value < 0 else (s == 0)
 
         while n & 0x01 == 0:
             n >>= 1
@@ -117,46 +157,56 @@ class Real:
 
     @staticmethod
     def encode_base2(value: Union[Decimal, float, int], base: int = 2, max_n_octets: int = 4) -> bytes:
+        """按照ASN.1实数二进制格式编码浮点数（ITU-T X.690 8.5）
+        """
         assert base in (2, 8, 16)
         data = bytearray()
-        first_octet = 0x80  # b8 = 1
+        first_octet = 0x80  # b8 = 1，表示二进制（8.5.6）
         if type(value) == float:
-            s, n, e = Real.decompose_ieee754_to_sne_of_two(value)
+            s, n, e = Real.decompose_float_to_sne_of_two(value)
+        elif type(value) == int:
+            s, n, e = Real.decompose_int_to_sne_of_two(value)
         else:
             s, n, e = Real.decompose_decimal_to_sne_of_two(value, max_n_octets)
 
-        print(s, n, e)
+        logger.debug(f'{value} => {s}, {n}, {e}')
 
+        #  b7为符号位（8.5.7.1）
         if s != 0:  # b7 = 1 if s = -1 or 0 otherwise
             first_octet |= 0x40
+
+        #  b6,b5为进制位（8.5.7.2、8.5.7.3）
         f = 0
-        if base == 8:  # b6,b5=01
+        if base == 8:  # b6,b5=01，表示八进制
             first_octet |= 0x10
             f = e % 3
             e = e // 3
-        elif base == 16:  # b6,b5=10
+        elif base == 16:  # b6,b5=10，表示十六进制
             first_octet |= 0x20
             f = e % 4
             e = e // 4
+        #  b4,b3为F值用于八进制和六十进制的指数余数
         first_octet |= (f << 2)  # b4,b3
 
+        #  b2,b1标记指数长度，指数用二进制补码表示（two's complement binary number）（8.5.7.4）
         exp_octets = signed_int_to_bytes(e)
         exp_len = len(exp_octets)
-        if exp_len == 1:
+
+        if exp_len == 1:  # 长度为1
             data.append(first_octet)
             pass  # b2,b1=00
-        elif exp_len == 2:
+        elif exp_len == 2:  # 长度为2
             first_octet |= 0x01  # b2,b1=01
             data.append(first_octet)
-        elif exp_len == 3:
+        elif exp_len == 3:  # 长度为3
             first_octet |= 0x02  # b2,b1=10
             data.append(first_octet)
-        else:
+        else:  # 长度超过3，下一个字节为长度值（无符号）
             first_octet |= 0x03  # b2,b1=11
             data.append(first_octet)
             data.extend(unsigned_int_to_bytes(exp_len))
         data.extend(exp_octets)
-        data.extend(unsigned_int_to_bytes(n))
+        data.extend(unsigned_int_to_bytes(n))  # 8.5.7.5
         return data
 
     @staticmethod
@@ -211,7 +261,8 @@ class Real:
             no = octets[lle+2:]
         e = int.from_bytes(eo, byteorder='big', signed=True)
         n = int.from_bytes(no, byteorder='big', signed=False)
-        dec_val = getcontext().power(b, e) * (2 ** f) * n * s
+        ctx = getcontext()
+        dec_val = Decimal(n) * ctx.power(b, e) * ctx.power(2, f) * s
         return Real(dec_val)
 
     @staticmethod
