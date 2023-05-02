@@ -1,3 +1,10 @@
+import struct
+import io
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 def bin_expr(octets: bytes):
     return ''.join(map(lambda b: '{:08b}'.format(b), octets))
 
@@ -34,6 +41,20 @@ def unsigned_int_to_bytes(value: int):
     :return:
     """
     return value.to_bytes((value.bit_length() + 7) // 8, byteorder='big', signed=False)
+
+
+def ieee754_double_to_bin_string(value: float) -> str:
+    ref = struct.pack(">d", value)
+    info = io.StringIO()
+    info.write(f'{ref[0] >> 7:1b} ')
+    info.write(f'{ref[0] & 0x7f:07b} ')
+    info.write(f'{ref[1] >> 4:04b} ')
+    info.write(f'{ref[1] & 0x0f:04b} ')
+    for i in range(2, 8):
+        info.write(f'{ref[i]:08b} ')
+
+    logger.debug(f'{ref.hex(" ")}: {info.getvalue()}')
+    return info.getvalue()
 
 
 class ASN1EncodingException(Exception):

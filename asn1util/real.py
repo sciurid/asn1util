@@ -1,3 +1,5 @@
+import io
+
 from .tlv import InvalidValue
 from .util import *
 from decimal import Decimal, Context, getcontext
@@ -6,13 +8,19 @@ import struct
 from enum import IntEnum
 import logging
 from types import MappingProxyType
+import math
 
 logger = logging.getLogger(__name__)
 
 
 class InvalidReal(InvalidValue):
     def __init__(self, message):
-        super.__init__(message)
+        super().__init__(message)
+
+
+class InvalidSpecialRealValue(InvalidValue):
+    def __init__(self, message):
+        super().__init__(message)
 
 
 class SpecialRealValue(IntEnum):
@@ -21,72 +29,120 @@ class SpecialRealValue(IntEnum):
     NOT_A_NUMBER = 0x42
     MINUS_ZERO = 0x43
 
+    def to_float(self) -> bytes:
+        if self == SpecialRealValue.PLUS_INFINITY:
+            return float('inf')
+        elif self == SpecialRealValue.MINUS_INFINITY:
+            return float('-inf')
+        elif self == SpecialRealValue.NOT_A_NUMBER:
+            return float('nan')
+        elif self == SpecialRealValue.MINUS_ZERO:
+            return -0.0
+
+    def to_octet(self):
+        return _SPECIAL_REAL_VALUE_OCTETS[self]
+
+    def to_decimal(self):
+        if self == SpecialRealValue.PLUS_INFINITY:
+            return Decimal('Infinity')
+        elif self == SpecialRealValue.MINUS_INFINITY:
+            return Decimal('-Infinity')
+        elif self == SpecialRealValue.NOT_A_NUMBER:
+            return Decimal('Nan')
+        elif self == SpecialRealValue.MINUS_ZERO:
+            return Decimal('-0')
+
+
+    @staticmethod
+    def from_float(value: float):
+        if math.isinf(value):
+            return SpecialRealValue.PLUS_INFINITY if value > 0 else SpecialRealValue.MINUS_INFINITY
+        elif math.isnan(value):
+            return SpecialRealValue.NOT_A_NUMBER
+        elif value == 0.0 and math.copysign(1.0, value) < 0.0:
+            return SpecialRealValue.MINUS_ZERO
+
+        raise InvalidSpecialRealValue(f'Float value {value:f} is not special.')
+
+    @staticmethod
+    def from_octet(b: int):
+        if b in _SPECIAL_REAL_VALUE_ENUMS:
+            return _SPECIAL_REAL_VALUE_ENUMS[b]
+
+        raise InvalidSpecialRealValue(f'Byte value 0x{b:01x} is not special.')
+
+    @staticmethod
+    def from_decimal(dec: Decimal):
+        if dec.is_nan():
+            return SpecialRealValue.NOT_A_NUMBER
+        elif dec.is_zero():
+            if dec.is_signed():
+                return SpecialRealValue.MINUS_ZERO
+            else:
+                return '0.E+0'
+        elif dec.is_infinite():
+            if dec.is_signed():
+                return SpecialRealValue.MINUS_INFINITY
+            else:
+                return SpecialRealValue.PLUS_INFINITY
+
+        raise InvalidSpecialRealValue(f'Decimal value 0x{dec:d} is not special.')
+
+
+_SPECIAL_REAL_VALUE_OCTETS = MappingProxyType({
+    s: s.to_bytes(1, byteorder='big', signed=False) for s in SpecialRealValue})
+_SPECIAL_REAL_VALUE_ENUMS = MappingProxyType({int(s): s for s in SpecialRealValue})
+
 
 class Real:
-    SPECIALS = (SpecialRealValue.PLUS_INFINITY, SpecialRealValue.MINUS_INFINITY,
-                SpecialRealValue.NOT_A_NUMBER, SpecialRealValue.MINUS_ZERO)
-    _SPECIAL_REAL_VALUES = MappingProxyType({
-        SpecialRealValue.PLUS_INFINITY : b'\x40',
-        SpecialRealValue.MINUS_INFINITY: b'\x41',
-        SpecialRealValue.NOT_A_NUMBER: b'\x42',
-        SpecialRealValue.MINUS_ZERO: b'\x43'
-    })
-
-    def __init__(self, value: Decimal, special: Union[int, SpecialRealValue] = None):
-        self._value = value.normalize()
-        self._special = SpecialRealValue(special) if special else None
-
-    def is_special(self):
-        return self._special is not None
-
-    def __repr__(self):
-        if self._special:
-            return self._special.name
+    def __init__(self, value: Union[float, int, Decimal, SpecialRealValue, bytes]):
+        if isinstance(value, SpecialRealValue):
+            self._value = value
+            self._octets = value.to_octet()
+        elif isinstance(value, float):
+            self._value = value
+            self._octets = Real.encode_float(value)
+        elif isinstance(value, int) or isinstance(value, Decimal):
+            self._value = value
+            self._octets = Real.encode_decimal(value)
+        elif isinstance(value, bytes):
+            self._octets = value
+            self._value = Real.decode(value)
         else:
-            return str(self._value)
-
-    @property
-    def special(self):
-        return self._special
-
-    @property
-    def value(self):
-        return self._value
+            raise InvalidReal(f'Value {value} of type {type(value)} is not supported')
 
     @staticmethod
-    def eval_float(float_value: float, precision: int = 16):
-        return Real(Decimal(float_value, Context(prec=precision)))
-
-    @staticmethod
-    def eval_string(string_value: str) -> Decimal:
-        return Decimal(string_value)
-
-    @staticmethod
-    def decompose_decimal_to_sne_of_two(value: Decimal, max_n_octets):
+    def decompose_decimal_to_sne_of_two(value: Decimal, max_bytes: int = 8):
         """
-        不应采用base2方式来表示base10的数值，会出现精度损失。
+        注意：不应采用base2方式来表示base10的数值，会出现精度损失。
         将数值分解为符号项S，整数项N和2的指数项E，并符合DER格式中关于N的最低位不为0的要求。
         :param value: 数值
-        :param max_n_octets: 整数项N的最大字节数（决定了表示的精度）
+        :param max_bytes: 整数项N的最大字节数（决定了表示的精度）
         :return: (S, N, E) 并且 abs(value) = N * pow(2, E)
         """
-        value = value.normalize()
-        if value == 0:
-            return 0, 0, 0
-        s = -1 if value < 0 else 0
-        abs_value = abs(value)
-        n = int(abs_value)
-        frac_part = abs_value - n
+        logger.warning("此方法通常存在精度损失，通常不应调用")
+        ds, dd, de = value.as_tuple()
+        di, df = (dd, ()) if de >= 0 else (dd[0:de], dd[de:]) if len(dd) > -de else ((), dd)
+        fp = Decimal((0, df, de,)) if df else Decimal(0)
+        ip = Decimal((0, di, de if de > 0 else 0,)) if di else Decimal(0)
 
-        frac_bit_len = max_n_octets * 8 - n.bit_length()
-        for i in range(frac_bit_len):
-            frac_part *= 2
-            if frac_part < 1:
+        s = ds
+        n = int(ip.to_integral_exact())
+        remainder = max_bytes * 8 - n.bit_length()  # 默认达到双精度数的精度
+        if remainder <= 0:  # 整数部分即溢出
+            n >> (-1 * remainder)
+            e = 0 - remainder
+            logger.warning(f'Integral part of decimal value {value} exceeds the max_bytes {max_bytes} limit.')
+            return s, n, e
+
+        for i in range(remainder):
+            fp *= 2
+            if fp < 1:
                 n <<= 1
             else:
                 n = (n << 1) + 1
-                frac_part -= 1
-        e = -1 * frac_bit_len
+                fp -= 1
+        e = 0 - remainder
         while n & 0x01 == 0:
             n >>= 1
             e += 1
@@ -163,13 +219,15 @@ class Real:
         return s, n, e
 
     @staticmethod
-    def encode_float(value: Union[float, int], base: int = 2, double: bool = True) -> bytes:
+    def encode_float(value: Union[float, int], base: int = 2, double: bool = True) -> Union[bytes, SpecialRealValue]:
         """按照ASN.1实数二进制格式编码浮点数（ITU-T X.690 8.5）
         base: 用于CER和DER时必须为2
         """
-        assert base in (2, 8, 16)
-        data = bytearray()
-        first_octet = 0x80  # b8 = 1，表示二进制（8.5.6）
+        try:
+            return SpecialRealValue.from_float(value).to_octet()
+        except InvalidSpecialRealValue:
+            pass
+
         if type(value) == float:
             if double:
                 s, n, e = Real.decompose_float_to_sne_of_two(value)
@@ -179,7 +237,15 @@ class Real:
             s, n, e = Real.decompose_int_to_sne_of_two(value)
 
         logger.debug(f'{value} => {s}, {n}, {e}')
+        return Real._encode_sne_base2(s, n, e, base)
 
+    @staticmethod
+    def _encode_sne_base2(s: int, n: int, e: int, base: int = 2):
+        assert base in (2, 8, 16)
+        assert s in (-1, 0)
+
+        data = bytearray()
+        first_octet = 0x80  # b8 = 1，表示二进制（8.5.6）
         #  b7为符号位（8.5.7.1）
         if s != 0:  # b7 = 1 if s = -1 or 0 otherwise
             first_octet |= 0x40
@@ -222,24 +288,15 @@ class Real:
     def encode_decimal(value: Union[int, Decimal], nr: int = 3) -> bytes:
         assert nr in (1, 2, 3)
         if isinstance(value, Decimal):
+            try:
+                return SpecialRealValue.from_decimal(value).to_octet()
+            except InvalidSpecialRealValue:
+                pass
             dec = value
         elif isinstance(value, int):
             dec = Decimal(value)
         else:
             raise InvalidReal("十进制编码仅接受int和Decimal类型/ Only int and Decimal is accepted for base10 encoding.")
-
-        if dec.is_nan():
-            return Real._SPECIAL_REAL_VALUES[SpecialRealValue.NOT_A_NUMBER]
-        elif dec.is_zero():
-            if dec.is_signed():
-                return Real._SPECIAL_REAL_VALUES[SpecialRealValue.MINUS_ZERO]
-            else:
-                return '0.E+0'
-        elif dec.is_infinite():
-            if dec.is_signed():
-                return Real._SPECIAL_REAL_VALUES[SpecialRealValue.MINUS_INFINITY]
-            else:
-                return Real._SPECIAL_REAL_VALUES[SpecialRealValue.PLUS_INFINITY]
 
         first_octet = None
         str_value = None
@@ -268,26 +325,27 @@ class Real:
         return first_octet + str_value.encode('ascii')
 
     @staticmethod
-    def encode(value, base: int = 10, nr: int = 2, max_n_octets: int = 4):
-        if base == 10:
-            return Real.encode_decimal(value, nr)
-        elif base in (2, 8, 16):
-            return Real.encode_float(value, base, True)
+    def encode(value: Union[int, float, Decimal]):
+        if isinstance(value, int) or isinstance(value, Decimal):
+            return Real.encode_decimal(value)
+        elif isinstance(value, float):
+            return Real.encode_float(value)
         else:
-            raise InvalidReal('Base should be 2, 8, 16 or 10.')
+            raise InvalidReal('实数类型只接受int、float、Decimal类型/ Only int, float and Decimal is supported.')
 
     @staticmethod
-    def _decode_base2s(octets: bytes) -> float:
+    def _decode_base2s(octets: bytes) -> Union[float, Decimal]:
+        logger.debug(f'{octets.hex(" ")}')
         fo = octets[0]  # for short of first_octet
         assert fo & 0x80 != 0
         s = 1 if (fo & 0x40) == 0 else -1  # b7 -> sign
-        b = (2, 8, 16, None)[(fo >> 4) & 0x03]  #b6,b5 -> base
+        b = (2, 8, 16, None)[(fo >> 4) & 0x03]  # b6,b5 -> base
         if b is None:
             raise InvalidReal("Base is a reserved value. (b6,b5=11")
         f = fo >> 2 & 0x03
         le = fo & 0x03
         if le == 0 or le == 1 or le == 2:
-            assert len(octets) > le + 2
+            assert len(octets) > le + 1
             eo = octets[1:le+2]
             no = octets[le+2:]
         else:
@@ -297,28 +355,61 @@ class Real:
             no = octets[lle+2:]
         e = int.from_bytes(eo, byteorder='big', signed=True)
         n = int.from_bytes(no, byteorder='big', signed=False)
+        logger.debug(f'Octets={octets.hex(" ")}, s={s:d}, n={n:d}, e={e:d}')
 
-        # TODO
-        fe = (e if b == 2 else e * 3 if b == 8 else e * 4)
-        fe += n.bit_length() - 1 + 1023
-        if fe < 0:  # 浮点数过小，将fe调整至-1022（次正规数）再判断是否为零
-            n >>= (-1 * fe)
+        if e == 0 and n == 0:
+            return 0.0
+
+        # 根据IEEE 754重构双精度浮点数，不直接计算，防止出现尾数过长造成过程中浮点数溢出的情况
+        fe = (e if b == 2 else e * 3 if b == 8 else e * 4) + f
+        if n.bit_length() > 53:  # 有效位超出了双精度
+            rshift = n.bit_length() - 53
+            fn = (n >> rshift) ^ ((0x01 << 52) - 1)  # 去掉首位的1
+            fe += rshift
+        else:
+            lshift = 53 - n.bit_length()
+            fn = (n << lshift) & ((0x01 << 52) - 1)  # 在52bit上向左对齐
+            fe -= lshift
+        fe += 52 + 1023  # fn的含义小数点后的52个bit，相当于在整数基础上右移了52位，因此指数增加52，再加上偏移值1023
+
+        logger.debug(f'Float:     fn={fn:052b}, fe={fe:d}')
+
+        if fe <= 0:  # 浮点数过小，调整指数为次正规数或者零，有效数整数部分为0
+            fn = (fn | (0x01 << 52)) >> (-1 * fe)  # 将首位的1补上，右移至fe=0，即指数变为-1023
             fe = 0
-            if n == 0:
+            logger.debug(f'Subnormal: fn={fn:052b}, fe={fe:d}')
+            if fn == 0:  # 绝对值低于浮点数可表示的下限，返回零
                 if s:
-                    raise SpecialRealValue.MINUS_ZERO
+                    raise -0.0
                 else:
                     return 0.0
-            else:
-
-        elif fe > 2047:  # 浮点数过大
-            raise SpecialRealValue.MINUS_INFINITY if s else SpecialRealValue.PLUS_INFINITY
+            else:  # 绝对值在次正规数范围内，将指数调整为-1022
+                fn >>= 1  # 尾数右移1位
+                fnb = fn.to_bytes(7, byteorder='big', signed=False)
+                b1 = 0x80 if s < 0 else 0x00
+                assert fnb[0] & 0xf0 == 0
+                b2 = (0x00 & 0xf0) | (fnb[0] & 0x0f)
+        elif fe > 2047:  # 浮点数过大，通常不会出现在二进制编码中
+            return Decimal(2) ** e * Decimal(n) * (-1 if s else 1)
         else:
+            fnb = fn.to_bytes(7, byteorder='big', signed=False)
+            assert (fe >> 4) & 0x80 == 0
+            b1 = (0x80 if s < 0 else 0x00) | (fe >> 4)
+            assert fnb[0] & 0xe0 == 0
+            b2 = ((fe << 4) & 0xf0) | (fnb[0] & 0x0f)
 
+        packed = bytearray((b1, b2,))
+        packed.extend(fnb[1:])
+        logger.debug(f'Encoded Octets: {packed.hex(" ")}')
+        raw_float = struct.unpack('>d', packed)[0]
 
+        if __debug__:
+            res = float(n) * (b ** e) * (2 ** f) * s
+            logger.debug(f'Raw:  {raw_float:e}, {struct.pack(">d", raw_float).hex()}')
+            logger.debug(f'Calc: {res:e}, {struct.pack(">d", res).hex()}')
+            assert res == raw_float
 
-
-        return float(n) * (b ** e) * (2 ** f) * s
+        return raw_float
 
     @staticmethod
     def _decode_base10(octets: bytes) -> Decimal:
@@ -330,16 +421,17 @@ class Real:
             raise InvalidReal("Decimal encoding is specified but not a valid representation is chosen.")
 
     @staticmethod
-    def decode(octets: bytes):  # 8.5.6
+    def decode(octets: bytes) -> Union[Decimal, float, SpecialRealValue]:  # 8.5.6
         assert len(octets) > 0
         fo = octets[0]  # for short of first_octet
         if fo & 0x80 != 0:  # b8=1
             return Real._decode_base2s(octets)
         elif fo & 0x40 == 0:  # b8,b7=00
             return Real._decode_base10(octets)
-        elif fo in Real.SPECIALS:
+        else:
+            srv = SpecialRealValue.from_octet(fo)
             if len(octets) != 1:
                 raise InvalidReal("Special real value with following octets")
-            return Real(value=Decimal(), special=fo)
-        else:
-            raise InvalidReal("Not a valid binary, decimal or special value representation.")
+            return srv
+
+        raise InvalidReal("Not a valid binary, decimal or special value representation.")

@@ -8,12 +8,12 @@ logger = logging.getLogger(__name__)
 
 class InvalidTLV(Exception):
     def __init__(self, message):
-        super.__init__(message)
+        super().__init__(message)
 
 
 class InvalidValue(InvalidTLV):
     def __init__(self, message):
-        super.__init__(message)
+        super().__init__(message)
 
 
 class TagClass(IntEnum):
