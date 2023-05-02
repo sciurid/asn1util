@@ -4,12 +4,115 @@ from .oid import *
 from .real import *
 
 from collections import namedtuple
+from collections.abc import Iterator
+from dataclasses import dataclass
 from io import BytesIO
+from typing import NamedTuple
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 DecoderStackItem = namedtuple('DecoderStackItem', ['tag', 'length', 'offsets'])
 TLVOffsets = namedtuple('TLVOffsets', ['t', 'l', 'v'])
 TLVItem = namedtuple('TLVItem', ['tag', 'length', 'value_octets', 'offsets', 'stack', 'decoded_value', 'tlv_octets'])
+
+
+TokenOffsets = NamedTuple('TokenOffsets', t=int, l=int, v=int)
+
+@dataclass
+class Token:
+    tag: Tag
+    length: Length
+    offsets: TokenOffsets
+    value: bytes
+
+
+
+def default_begin_handler(token: Token):
+    logger.debug(f'--->{token}')
+
+def default_end_handler(token: Token):
+    logger.debug(f'<---{token}')
+
+class Decoder(Iterator):
+    def __init__(self, data: Union[bytes, BinaryIO]):
+        super().__init__()
+        self._buffer = BytesIO(data) if isinstance(data, bytes) else data
+        self._stack = []
+        self._current = None
+
+
+    def proceed_token(self, begin_handler=default_begin_handler, end_handler=default_end_handler):
+        tof = self._buffer.tell()  # tag offset
+        tag = Tag.decode(self._buffer)  # parse tag
+        if tag is None:  # EOF of data
+            return None
+
+        lof = self._buffer.tell()  # length offset
+        length = Length.decode(self._buffer)  # parse length
+
+        vof = self._buffer.tell()  # value offset
+
+        self._current = Token(tag, length, TokenOffsets(tof, lof, vof), None)
+        if begin_handler:
+            begin_handler(self._current)
+
+        if tag.is_primitive:
+            self._proceed_primitive()
+            if end_handler:
+                end_handler(self._current)
+            self._accomplish_constructed(end_handler)
+        else:
+            self._proceed_constructed()
+
+        return self._current
+
+    def _proceed_primitive(self):
+        if not self._current.length.is_definite:  # 不应当是不定长value
+            raise InvalidTLV(f"Primitive tag '{tag}' with indefinite length is not supported.")
+
+        l = self._current.length.value
+        value_octets = self._buffer.read(l)  # value数据字节
+        if len(value_octets) < l:  # 剩余字节不足
+            raise InvalidTLV(f"Not enough value octets. {l:d} required but {len(value_octets):d} remains.")
+        self._current.value = value_octets
+
+    def _proceed_constructed(self):
+        self._stack.append(self._current)
+
+    def _accomplish_constructed(self, end_handler=None):
+        while self._stack:
+            # 检查上级元素是否结束
+            parent = self._stack[-1]  # 取得上级元素
+            if parent.length.is_definite:  # 定长上级元素则计算累计value长度
+                expected_pos = parent.offsets.v + parent.length.value
+                current_pos = self._buffer.tell()  # 当前元素结束时的offset
+                if expected_pos == current_pos:  # 相等则上级元素结束，退栈
+                    last = self._stack.pop()
+                    if end_handler:
+                        end_handler(last)
+                elif current_pos > expected_pos:  # 当前位置超出上级元素结束值，格式错误
+                    raise InvalidTLV(f"当前位置{current_pos}超出上级元素结束值{expected_pos}")
+                else:  # 表示上级元素内部还继续有子元素
+                    break
+            else:  # 不定长上级元素
+                # 遇到EOC标记结尾，退栈
+                if self._current.tag.number == 0 and self._current.length.value == 0:
+                    last = self._stack.pop()
+                    if end_handler:
+                        end_handler(last)
+                else:
+                    break
+
+    def __next__(self):
+        token = self.proceed_token()
+        if token:
+            return token
+        else:
+            raise StopIteration
+
+
 
 
 def dfs_decoder(data: Union[bytes, BinaryIO], constructed_end_handler=None):

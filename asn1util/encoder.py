@@ -2,6 +2,7 @@ from .encoding import *
 from .tlv import *
 from .oid import *
 from .real import *
+from contextlib import contextmanager
 
 
 VALUE_TYPE_ENCODERS = {
@@ -68,6 +69,14 @@ class Encoder:
             raise ASN1EncodingException('No begin_constructed() with end_constructed()')
         tag, value = self._stack.pop()
         self._recursive_return(tag, value)
+
+    @contextmanager
+    def construct(self, tag_number: int, tag_class: TagClass = TagClass.UNIVERSAL):
+        self.begin_constructed(tag_number, tag_class)
+        try:
+            yield
+        finally:
+            self.end_constructed()
 
     def _recursive_return(self, tag: Tag, value: bytes):
         """

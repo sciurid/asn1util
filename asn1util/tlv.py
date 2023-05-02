@@ -129,7 +129,7 @@ class Tag:
         return self._octets
 
     def __repr__(self):
-        return self._octets.hex(' ')
+        return f'0x{self._octets.hex(" ")}'
 
     TAG_CLASS_ABBR = {
         TagClass.UNIVERSAL: 'UNIV',
@@ -253,10 +253,9 @@ class Length:
 
     def __repr__(self):
         if self.is_definite:
-            return f"[L]{self._value}"
+            return f"{self._value}"
         else:
-            return "[L]INF"
-
+            return "INDEFINITE"
 
 class Value:
     def __init__(self, octets: bytes):
