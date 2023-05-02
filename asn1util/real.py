@@ -120,17 +120,17 @@ class Real:
         :param max_bytes: 整数项N的最大字节数（决定了表示的精度）
         :return: (S, N, E) 并且 abs(value) = N * pow(2, E)
         """
-        logger.warning("此方法通常存在精度损失，通常不应调用")
+        logger.warning("此方法通常存在精度损失，通常不应调用/ This methods may result in precision lost.")
         ds, dd, de = value.as_tuple()
         di, df = (dd, ()) if de >= 0 else (dd[0:de], dd[de:]) if len(dd) > -de else ((), dd)
-        fp = Decimal((0, df, de,)) if df else Decimal(0)
-        ip = Decimal((0, di, de if de > 0 else 0,)) if di else Decimal(0)
+        fp = Decimal((0, df, de)) if df else Decimal(0)
+        ip = Decimal((0, di, de if de > 0 else 0)) if di else Decimal(0)
 
         s = ds
         n = int(ip.to_integral_exact())
         remainder = max_bytes * 8 - n.bit_length()  # 默认达到双精度数的精度
         if remainder <= 0:  # 整数部分即溢出
-            n >> (-1 * remainder)
+            n >>= (-1 * remainder)
             e = 0 - remainder
             logger.warning(f'Integral part of decimal value {value} exceeds the max_bytes {max_bytes} limit.')
             return s, n, e
