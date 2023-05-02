@@ -68,7 +68,7 @@ class RealValueTestCase(TestCase):
 
             dv = Decimal(sv)
             fv = float(dv)
-            s, n, e = Real.decompose_decimal_to_sne_of_two(dv, 80)
+            s, n, e = Real.decompose_decimal_to_base2_sne(dv, 80)
             rv = 2 ** e * n * (-1 if s else 1)
             print(dv, fv, rv)
             self.assertEqual(rv, fv)

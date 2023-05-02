@@ -1,9 +1,13 @@
 from enum import IntEnum
 from typing import BinaryIO, Union
 import logging
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+class ASN1EncodingException(Exception):
+    def __init__(self, message):
+        super().__init__(message)
 
 
 class InvalidTLV(Exception):
@@ -11,7 +15,12 @@ class InvalidTLV(Exception):
         super().__init__(message)
 
 
-class InvalidValue(InvalidTLV):
+class UnsupportedValueException(InvalidTLV):
+    def __init__(self, value):
+        super().__init__(f"类型 {type(self)}不支持值{value}/ Value {value} is not supported by type {type(self)}")
+
+
+class ValueEncodingException(InvalidTLV):
     def __init__(self, message):
         super().__init__(message)
 
@@ -76,39 +85,28 @@ TagNumber.constructed_set = {
 
 
 class Tag:
-    def __init__(self, octets: Union[bytes, bytearray]):
-        assert octets, 'Tag octets should not be None or empty.'
-        self._octets = bytes(octets)
-        self._eval()
-        self._validate()
+    def __init__(self, octets: bytes):
+        assert isinstance(octets, bytes), 'Tag octets should be bytes'
+        self._octets = memoryview(octets)
 
-    def _eval(self):
+        tag_len = len(self._octets)
         initial = self._octets[0]
         self._cls = TagClass(initial & 0xC0)
         self._pc = TagPC(initial & 0x20)
-        if self.low_tag_number:
-            self._number = initial & 0x1f
-        else:
-            number = 0
-            for octet in self._octets[1:]:
-                number = (number << 7) + (octet & 0x3f)
-            else:
-                assert octet & 0x80 == 0, 'High tag number octets do not end with b8 = 0.'
-            self._number = number
 
-    def _validate(self):
-        if self._cls != TagClass.UNIVERSAL:
-            return
-        if self._number not in TagNumber.values:
-            return
-        tn = TagNumber(self._number)
-        if self.is_primitive:
-            if tn in TagNumber.primitive_set:
-                return
-        else:
-            if tn in TagNumber.constructed_set:
-                return
-        raise InvalidTLV(f"Universal class type {tn.name} should not be {self.pc.name}.")
+        #  X.690 8.1.2.3
+        if tag_len == 1 and 0 <= (self._octets[0] & 0x1F) < 0x1F:
+            self._number = initial & 0x1f
+        #  X.690 8.1.2.4
+        else:  # 当Tag Number为长编号（>30）时，后续字节首位为1，直至首位为0的字节
+            assert tag_len > 1, 'High tag number without following octets.'
+            self._number = 0
+            for ind, octet in enumerate(self._octets[1:], 1):
+                assert (octet & 0x7f == 0) != (ind == 1), 'High tag number first octet with b7-b1 all zeros.'
+                assert (octet & 0x80 == 0) != (ind == tag_len - 1), 'High tag number octets do not end with b8 = 0.'
+                self._number <<= 7
+                self._number += octet & 0x3f
+            assert self._number >= 0x1F, 'High tag number less than 31.'
 
     @property
     def cls(self) -> TagClass:
@@ -123,23 +121,34 @@ class Tag:
         return self.pc == TagPC.PRIMITIVE
 
     @property
-    def low_tag_number(self) -> bool:
-        return len(self._octets) == 1 and 0 <= (self._octets[0] & 0x1F) < 0x1F
-
-    @property
     def number(self) -> int:
         return self._number
 
     @property
-    def octets(self) -> bytes:
+    def octets(self) -> memoryview:
         return self._octets
 
-    @property
-    def value(self):
-        return self.octets.hex().upper()
+    def __repr__(self):
+        return self._octets.hex(' ')
+
+    TAG_CLASS_ABBR = {
+        TagClass.UNIVERSAL: 'UNIV',
+        TagClass.APPLICATION: 'APP',
+        TagClass.CONTEXT_SPECIFIC: 'CTXT',
+    }
+
+    def __str__(self):
+        if self.cls == TagClass.UNIVERSAL:
+            tn = TagNumber(self.number) if self.number in TagNumber.values else None
+            if tn is not None:
+                return f'{repr(self)} ({tn.name})'
+            else:
+                return f'{repr(self)} (UNKNOWN)'
+        else:
+            return f'{repr(self)} ({Tag.TAG_CLASS_ABBR[self.cls]})'
 
     @staticmethod
-    def encode(cls: TagClass, pc: TagPC, number: int):
+    def build(cls: TagClass, pc: TagPC, number: int) -> 'Tag':
         tag_initial = cls | pc
         if number < 0x1f:
             tag_initial |= number
@@ -160,103 +169,114 @@ class Tag:
         if len(buffer) == 0:  # EOF of data
             return None
 
+        if buffer[0] & 0x1f != 0x1f:  # Low tag number form
+            return Tag(buffer)
+
         octets = bytearray()
-        tag_initial = buffer[0]
-        octets.append(tag_initial)
+        octets.append(buffer[0])
+        while buffer := data.read(1):
+            octets.extend(buffer)
+            if buffer[0] & 0x80 == 0:
+                break
 
-        short_number = tag_initial & 0x1f
-        if short_number == 0x1f:  # High tag number form
-            while buffer := data.read(1):
-                octet = buffer[0]
-                octets.append(octet)
-                if octet & 0x80 == 0:
-                    break
-            else:
-                raise InvalidTLV("High tag number bytes not end. (No following byte or b8 == 1 for the last byte)")
-            if len(octets) == 1:
-                raise InvalidTLV("High tag number with no bytes following.")
-            elif octets[1] & 0x7f == 0:
-                raise InvalidTLV("High tag number with b7 to b1 being 0 in the first following octet.")
-            return Tag(octets)
-        else:
-            return Tag(bytes([tag_initial]))
-
-    TAG_CLASS_ABBR = {
-        TagClass.UNIVERSAL: 'UNIV',
-        TagClass.APPLICATION: 'APP',
-        TagClass.CONTEXT_SPECIFIC: 'CTXT-SPEC',
-    }
-
-    def __repr__(self):
-        if self.cls == TagClass.UNIVERSAL:
-            tn = TagNumber(self.number) if self.number in TagNumber.values else None
-            if tn is not None:
-                return f'{self.value} ({tn.name})'
-            else:
-                return f'{self.value} (UNKNOWN)'
-        else:
-            return f'{self.value} ({Tag.TAG_CLASS_ABBR[self.cls]})'
+        return Tag(octets)
 
 
 class Length:
     INDEFINITE = b'\x80'
 
-    def __init__(self, length_value: Union[int, None]):
-        self._length_value = length_value
-        self._data = Length.encode(length_value)
+    def __init__(self, octets: bytes):
+        self._octets = memoryview(octets)
+
+        assert self._octets
+        seg_len = len(self._octets)
+        initial = self._octets[0]
+
+        if initial == Length.INDEFINITE:  # 不确定长度格式（X.690 8.1.3.6）
+            self._value = None
+        elif initial & 0x80 == 0:  # 短长度格式（X.690 8.1.3.4）
+            assert seg_len == 1
+            self._value = initial & 0x7f
+            assert self._value < 127
+        else:
+            assert seg_len == (initial & 0x7f) + 1 and initial != 0xff
+            self._value = int.from_bytes(self._octets[1:], byteorder='big', signed=False)
 
     @staticmethod
-    def encode(length_value: int) -> bytes:
+    def build(length_value: int) -> 'Length':
         if length_value is None:
             return Length.INDEFINITE
-        if length_value < 0:
-            raise InvalidTLV("Length value is less than 0.")
-        if length_value < 128:
-            return bytes([length_value])
+        assert length_value >= 0, 'Length value is less than 0'
+
+        if length_value < 127:
+            return Length(length_value.to_bytes(1, byteorder='big', signed=False))
         else:
             length_octets = (length_value.bit_length() + 7) // 8
             if length_octets > 127:
                 raise InvalidTLV("Length value is more than 127 bytes.")
 
-            res = bytearray([length_octets | 0x80])
-            res.extend(length_value.to_bytes(length_octets, byteorder='big'))
-            return bytes(res)
+            res = bytearray((length_octets | 0x80).to_bytes(1, byteorder='big', signed=False))
+            res.extend(length_value.to_bytes(length_octets, byteorder='big', signed=False))
+            return Length(bytes(res))
 
     @property
     def is_definite(self):
-        return self._data != Length.INDEFINITE
+        return self._value is not None
 
     @property
     def value(self):
-        return self._length_value
+        return self._value
 
     @property
     def octets(self):
-        return self._data
+        return self._octets
 
     @staticmethod
     def decode(data: BinaryIO):
         buffer = data.read(1)
         if len(buffer) == 0:
             raise InvalidTLV("Length octet is missing.")
-        length_initial = buffer[0]
+        initial = buffer[0]
 
-        if length_initial == 0x80:  # Indefinite length
-            length = Length(None)
-        elif length_initial & 0x80 == 0:  # Short form length
-            length = Length(length_initial)
+        if initial == 0x80:  # Indefinite length
+            return Length(buffer)
+        elif initial & 0x80 == 0:  # Short form length
+            return Length(buffer)
         else:  # Long form length
-            length_rest = length_initial & 0x7f
-            length_octets = data.read(length_rest)
-            if len(length_octets) < length_rest:
+            buffer = bytearray()
+            buffer.append(initial)
+            buffer.extend(data.read(initial & 0x7f))
+            if len(buffer) < (initial & 0x7f) + 1:
                 raise InvalidTLV(
-                    f"Long form length with not enough additional length octets. (0x{length_octets.hex()})")
-            length = Length(int.from_bytes(length_octets, byteorder='big'))
-        return length
+                    f"Long form length with not enough additional length octets. (0x{subsequent_octets.hex()})")
+            return Length(buffer)
 
     def __repr__(self):
         if self.is_definite:
-            return f"[L]{self._length_value}"
+            return f"[L]{self._value}"
         else:
             return "[L]INF"
+
+
+class Value:
+    def __init__(self, octets: bytes):
+        assert isinstance(octets, bytes)
+        self._octets = memoryview(octets)
+        self._value = None
+
+    def __getitem__(self, index):
+        return self._octets[index]
+
+    def __len__(self):
+        return len(self._octets)
+
+    def __repr__(self):
+        return self._octets.hex(' ')
+
+    @property
+    def value(self):
+        return self._value
+
+    def __str__(self):
+        return str(self._value)
 

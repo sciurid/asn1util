@@ -1,9 +1,9 @@
-from .tlv import InvalidValue
+from .tlv import UnsupportedValueException
 from typing import Iterable, Union
 import re
 
 
-class InvalidObjectIdentifier(InvalidValue):
+class InvalidObjectIdentifier(UnsupportedValueException):
     def __init__(self, message):
         self.message = message
 

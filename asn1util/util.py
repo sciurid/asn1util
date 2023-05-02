@@ -56,7 +56,3 @@ def ieee754_double_to_bin_string(value: float) -> str:
     logger.debug(f'{ref.hex(" ")}: {info.getvalue()}')
     return info.getvalue()
 
-
-class ASN1EncodingException(Exception):
-    def __init__(self, message):
-        self.message = message

@@ -36,10 +36,12 @@ class Encoder:
         self._stack = []
         self._data = bytearray()
 
-    def append_primitive(self, tag_number: int, tag_class: TagClass = TagClass.UNIVERSAL, **kwargs):
-        tag = Tag.encode(tag_class, TagPC.PRIMITIVE, tag_number)
+    def append_primitive(self, tag_number: int, tag_class: TagClass = TagClass.UNIVERSAL, raw: bytes = None, **kwargs):
+        tag = Tag.build(tag_class, TagPC.PRIMITIVE, tag_number)
         tn = TagNumber(tag_number)
-        if tn in VALUE_TYPE_ENCODERS:
+        if raw:
+            encoded = raw
+        elif tn in VALUE_TYPE_ENCODERS:
             encoded = VALUE_TYPE_ENCODERS[tn](**kwargs)
         else:
             raise NotImplementedError(tn)
@@ -53,7 +55,7 @@ class Encoder:
         :param tag_class:
         :return:
         """
-        tag = Tag.encode(tag_class, TagPC.CONSTRUCTED, tag_number)
+        tag = Tag.build(tag_class, TagPC.CONSTRUCTED, tag_number)
         self._stack.append((tag, bytearray()))
 
     def end_constructed(self):
@@ -77,8 +79,11 @@ class Encoder:
         :return:
         """
         # assert isinstance(value, bytes)
-        length = Length(len(value))
-        segment = tag.octets + length.octets + value
+        length = Length.build(len(value))
+        segment = bytearray()
+        segment.extend(tag.octets)
+        segment.extend(length.octets)
+        segment.extend(value)
         if len(self._stack) == 0:
             self._data.extend(segment)
         else:

@@ -1,15 +1,11 @@
 from datetime import *
+
 from typing import Union
 import isodate
 from isodate.duration import Duration
 import re
 import chardet
-from .util import *
-
-
-class NotSupportedValueException(ASN1EncodingException):
-    def __init__(self, value):
-        self.message = f'Value {value} of type {type(value)} is not supported.'
+from .tlv import Value, UnsupportedValueException, ValueEncodingException
 
 
 class BooleanValue:
@@ -19,53 +15,48 @@ class BooleanValue:
             return b'\xff' if value else b'\x00'
         if isinstance(value, int):
             return b'\xff' if value != 0 else b'\x00'
-        raise NotSupportedValueException(value)
+        raise UnsupportedValueException(value)
 
     @staticmethod
     def decode(value: bytes) -> bool:
         if len(value) != 1:
-            raise NotSupportedValueException(value)
+            raise UnsupportedValueException(value)
         return value[0] != 0
 
 
-class BitString:
-    def __init__(self, octets: bytes, bit_length: int):
-        assert octets is not None
-        if bit_length is None:
-            bit_length = len(octets) * 8
-            self._unused = 0
-        else:
-            assert (len(octets) - 1) * 8 < bit_length <= len(octets) * 8
-            self._unused = 0 if bit_length % 8 == 0 else 8 - (bit_length % 8)
+class BitString(Value):
+    def __init__(self, octets: bytes):
+        super().__init__(octets)
+        initial = self._octets[0]
+        if initial > 7:
+            raise ValueEncodingException(f'BitString未用比特数为{initial}/ Unused {initial} bits in BitString')
+        self._bit_length = (len(self._octets) - 1) * 8 - initial
+        if self._bit_length < 0:
+            raise ValueEncodingException(f'BitString为空但未用比特数为{initial}/ Unused {initial} bits in empty BitString.')
+        self._value = int.from_bytes(self._octets[1:], byteorder='big', signed=False)
+        self._value >>= initial
 
-        self._octets = octets
-        self._bit_length = bit_length
-
-    def __repr__(self):
-        if self._unused == 0:
-            header = '[{:d} bytes] '.format(len(self._octets))
-        else:
-            header = '[{:d} bytes with last {:d} bits unused] '.format(self._bit_length, self._unused)
-        return header + self._octets.hex(' ')
+    def __str__(self):
+        return f'{{:0{self._bit_length}b}}'.format(self._value)
 
     @staticmethod
-    def encode(value: Union[bytes, 'BitString'], bit_length: int = None) -> bytes:
-        if isinstance(value, BitString):
-            bs = value
-        else:
-            bs = BitString(value, bit_length)
-        encoded = bytearray()
-        encoded.append(bs._unused)
-        encoded.extend(bs._octets)
-        encoded[-1] &= ((0xff << bs._unused) & 0xff)
-        return encoded
+    def decode(octets: bytes) -> 'BitString':
+        return BitString(octets)
 
     @staticmethod
-    def decode(octets: bytes) -> (bytes, int):
-        bit_length = (len(octets) - 1) * 8
-        if octets[0] > 0:
-            bit_length -= octets[0]
-        return BitString(octets[1:], bit_length)
+    def encode(value: int, bit_length: int = None) -> bytes:
+        if bit_length == 0:  # 空串
+            assert value == 0
+            return bytes((0x00, ))
+
+        assert 0 <= value < (0x01 << bit_length)  # 比特长度足以容纳数值
+
+        byte_length = (bit_length + 7) // 8
+        unused_bits = byte_length * 8 - bit_length
+
+        octets = bytearray((unused_bits, ))
+        octets.extend((value << unused_bits).to_bytes(byte_length, byteorder='big', signed=False))
+        return bytes(octets)
 
 
 def encode_restricted_string(value: str, encoding="iso-8859-1") -> bytes:
@@ -91,86 +82,104 @@ def encode_bmp_string(value: str) -> bytes:
     return value.encode('utf-16')
 
 
-class GeneralizedTime:
-    DATETIME_PATTERN = re.compile(r'^([0-9]{4})(0[1-9]|1[0-2])([0-2][0-9]|3[01])'
-                                  r'([01][0-9]|2[0-3])(?:([0-5][0-9])([0-5][0-9])?)?(\.[0-9]+)'
-                                  r'(Z|([+-])(0[0-9]|1[0-2])([0-5][0-9])?)?$')
+_YEAR_G = r'(?P<year>[0-9]{4})'
+_YEAR_U = r'(?P<year>[0-9]{2})'
+_MONTH = r'(?P<month>0[1-9]|1[0-2])'
+_DAY = r'(?P<day>[0-2][0-9]|3[01])'
+_HOUR = r'(?P<hour>[01][0-9]|2[0-3])'
+_MINUTE = r'(?P<minute>[0-5][0-9])'
+_SECOND = r'(?P<second>[0-5][0-9])'
+_FRACTION = r'(?P<fraction>\.[0-9]+)'
+_TIMEZONE = r'(?P<timezone>Z|(?P<tzsign>[+-])(?P<tzhour>0[0-9]|1[0-2])(?P<tzminute>[0-5][0-9])?)'
+
+
+class GeneralizedTime(Value):
+    DATETIME_PATTERN = re.compile(f'^{_YEAR_G}{_MONTH}{_DAY}{_HOUR}{_MINUTE}?{_SECOND}?{_FRACTION}?{_TIMEZONE}?$')
+
+    def __init__(self, octets: bytes):
+        super().__init__(octets)
+
+        dt_str = octets.decode('utf-8')
+        m = GeneralizedTime.DATETIME_PATTERN.match(dt_str)
+        if m is None:
+            raise UnsupportedValueException(f"Generalized Time: {dt_str}")
+
+        year, month, day, hour, minute, second, fraction, tz, tzsign, tzhour, tzminute = m.groups()
+        if fraction:
+            if second is None:
+                if minute is None:
+                    frac_delta = timedelta(hours=float(fraction))
+                else:
+                    frac_delta = timedelta(minutes=float(fraction))
+            else:
+                frac_delta = timedelta(seconds=float(fraction))
+        else:
+            frac_delta = None
+
+        if tz == 'Z':
+            tz_delta = None
+        else:
+            tz_delta = timedelta(hours=int(tzhour) if tzhour else 0,
+                                 minutes=int(tzminute) if tzminute else 0) * (1 if tzsign == '-' else -1)
+
+        self._value = datetime(year=int(year), month=int(month), day=int(day),
+                               hour=int(hour), minute=int(minute) if minute else 0,
+                               second=int(second) if second else 0)
+        if frac_delta:
+            self._value += frac_delta
+        if tz_delta:
+            self._value += tz_delta
+
+    def __str__(self):
+        return self._value.strftime('UTC %Y-%m-%d %H:%M:%S.%f')
 
     @staticmethod
-    def encode(dt: datetime) -> bytes:
-        if dt.tzinfo is None:
-            if dt.microsecond == 0:
-                res = dt.strftime('%Y%m%d%H%M%S')
-            else:
-                res = dt.strftime('%Y%m%d%H%M%S%f')
+    def encode(value: datetime) -> bytes:
+        if value.tzinfo:
+            value = value.astimezone(timezone.utc)
+        if value.microsecond == 0:
+            res = value.strftime("%Y%m%d%H%M%SZ")
         else:
-            if dt.microsecond == 0:
-                res = dt.strftime('%Y%m%d%H%M%S%z')
-            else:
-                res = dt.strftime('%Y%m%d%H%M%S%f%z')
+            res = value.strftime("%Y%m%d%H%M%S.%fZ")
         return res.encode('utf-8')
 
     @staticmethod
-    def decode(value: bytes):
-        dt_str = value.decode('utf-8')
-        m = GeneralizedTime.DATETIME_PATTERN.match(dt_str)
+    def decode(octets: bytes):
+        return GeneralizedTime(octets)
+
+
+class UTCTime(Value):
+    DATETIME_PATTERN = re.compile(f'^{_YEAR_U}{_MONTH}{_DAY}{_HOUR}{_MINUTE}{_SECOND}?{_TIMEZONE}$')
+
+    def __init__(self, octets: bytes):
+        super().__init__(octets)
+
+        dt_str = octets.decode('utf-8')
+        m = UTCTime.DATETIME_PATTERN.match(dt_str)
         if m is None:
-            raise NotSupportedValueException(f"Generalized Time: {dt_str}")
+            raise UnsupportedValueException(f"UTC Time: {dt_str}")
+
+        year, month, day, hour, minute, second, tz, tzsign, tzhour, tzminute = m.groups()
+
+        if tz == 'Z':
+            tz_delta = None
         else:
-            year, month, day, hour, minute, second, frac \
-                = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5), m.group(6), m.group(7)
-            if second is None:
-                if minute is None:
-                    frac_delta = timedelta(hours=float(frac))
-                    minute = '00'
-                else:
-                    frac_delta = timedelta(minutes=float(frac))
-                second = '00'
-            else:
-                frac_delta = timedelta(seconds=float(frac))
+            tz_delta = timedelta(hours=int(tzhour) if tzhour else 0,
+                                 minutes=int(tzminute) if tzminute else 0) * (1 if tzsign == '-' else -1)
 
-            string_datetime = year + month + day + hour + minute + second
+        self._value = datetime(year=int(2000 + int(year) if int(year) < 70 else 1900 + int(year)),
+                               month=int(month), day=int(day),
+                               hour=int(hour), minute=int(minute),
+                               second=int(second) if second else 0)
+        if tz_delta:
+            self._value += tz_delta
 
-            tz = m.group(8)
-            if tz is None:
-                dtf = '%Y%m%d%H%M%S'
-            else:
-                dtf = '%Y%m%d%H%M%S%z'
-                if tz == 'Z':
-                    string_datetime += '+0000'
-                else:
-                    tzsign = m.group(9)
-                    tzhour = m.group(10)
-                    tzminute = m.group(11)
-                    string_datetime += tzsign + tzhour + ('00' if tzminute is None else tzminute)
-
-            dt = datetime.strptime(string_datetime, dtf)
-            dt += frac_delta
-            return dt
-
-
-class UTCTime:
-    UTC_TIME_PATTERN = re.compile(
-        r'^([0-9]{2})(0[1-9]|1[0-2])([0-2][0-9]|3[01])'
-        r'([01][0-9]|2[0-3])([0-5][0-9])([0-5][0-9])?'
-        r'(Z|[+-](?:0[0-9]|1[0-2])[0-5][0-9])$')
+    def __str__(self):
+        return self._value.strftime('UTC %Y-%m-%d %H:%M:%S')
 
     @staticmethod
     def decode(octets: bytes):
-        dt_str = octets.decode('utf-8')
-        m = UTCTime.UTC_TIME_PATTERN.match(dt_str)
-        if m is None:
-            raise NotSupportedValueException(f"Generalized Time: {dt_str}")
-        else:
-            year, month, day, hour, minute, second, tz \
-                = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5), m.group(6), m.group(7)
-            if second is None:
-                second = '00'
-
-            if tz == 'Z':
-                tz = '+0000'
-            dt = datetime.strptime(year + month + day + hour + minute + second + tz, '%y%m%d%H%M%S%z')
-            return dt
+        return UTCTime(octets)
 
     @staticmethod
     def encode(value: datetime):
@@ -193,7 +202,7 @@ def encode_date(value: Union[date, datetime]) -> bytes:
 
 def encode_duration(value: timedelta) -> bytes:
     assert isinstance(value, timedelta)
-    return isodate.duration_isoformat(value).lstrip('P').encode('ascii')
+    return isodate.duration_isoformat(value).lstrip('P').build('ascii')
 
 
 def decode_duration(value: bytes) -> timedelta:
