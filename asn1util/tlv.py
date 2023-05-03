@@ -16,8 +16,11 @@ class InvalidTLV(Exception):
 
 
 class UnsupportedValueException(InvalidTLV):
-    def __init__(self, value):
-        super().__init__(f"类型 {type(self)}不支持值{value}/ Value {value} is not supported by type {type(self)}")
+    def __init__(self, message=None, value=None):
+        if message:
+            super().__init__(message)
+        else:
+            super().__init__(f"类型 {type(self)}不支持值{value}/ Value {value} is not supported by type {type(self)}")
 
 
 class ValueEncodingException(InvalidTLV):
@@ -56,16 +59,26 @@ class TagNumber(IntEnum):
     Set = 0x11
     NumericString = 0x12
     PrintableString = 0x13
-    T61String = 0x14
+    TeletexString = 0x14  # T61String
+    VideotexString = 0x15
     IA5String = 0x16
     UTCTime = 0x17
     GeneralizedTime = 0x18
-    UniversalString = 0x1c
+    GraphicString = 0x19
+    VisibleString = 0x1a  # ISO646String
+    GeneralString = 0x1b
+    UniversalString = 0x1c  # UTF8String
     BMPString = 0x1e
     Date = 0x1f
     TimeOfDay = 0x20
     DateTime = 0x21
     Duration = 0x22
+
+RESTRICTED_STRING_TAGS = (
+    TagNumber.UTF8String, TagNumber.NumericString, TagNumber.PrintableString, TagNumber.TeletexString,
+    TagNumber.VideotexString, TagNumber.IA5String, TagNumber.GraphicString, TagNumber.VisibleString,
+    TagNumber.GeneralString, TagNumber.UniversalString, TagNumber.BMPString
+)
 
 
 TagNumber.values = set(item.value for item in TagNumber)
@@ -74,13 +87,13 @@ TagNumber.primitive_set = {
     TagNumber.OctetString, TagNumber.Null, TagNumber.ObjectIdentifier,
     TagNumber.ObjectDescriptor, TagNumber.Real, TagNumber.Enumerated, TagNumber.UTF8String,
     TagNumber.RelativeOID, TagNumber.Time, TagNumber.NumericString, TagNumber.PrintableString,
-    TagNumber.T61String, TagNumber.IA5String, TagNumber.UTCTime, TagNumber.GeneralizedTime,
+    TagNumber.TeletexString, TagNumber.IA5String, TagNumber.UTCTime, TagNumber.GeneralizedTime,
     TagNumber.UniversalString, TagNumber.Date, TagNumber.TimeOfDay, TagNumber.DateTime,
     TagNumber.Duration}
 TagNumber.constructed_set = {
     TagNumber.BitString, TagNumber.OctetString, TagNumber.ObjectDescriptor,
     TagNumber.UTF8String, TagNumber.Sequence, TagNumber.Set, TagNumber.NumericString,
-    TagNumber.PrintableString, TagNumber.T61String, TagNumber.IA5String, TagNumber.UTCTime,
+    TagNumber.PrintableString, TagNumber.TeletexString, TagNumber.IA5String, TagNumber.UTCTime,
     TagNumber.GeneralizedTime, TagNumber.UniversalString}
 
 

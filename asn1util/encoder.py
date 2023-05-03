@@ -3,6 +3,7 @@ from .tlv import *
 from .oid import *
 from .real import *
 from contextlib import contextmanager
+from functools import partial
 
 
 VALUE_TYPE_ENCODERS = {
@@ -12,24 +13,25 @@ VALUE_TYPE_ENCODERS = {
     TagNumber.BitString: BitString.encode,
     TagNumber.OctetString: (lambda value: value),
     TagNumber.Null: (lambda value: b''),
-    TagNumber.Enumerated: signed_int_to_bytes,
-    TagNumber.UTF8String: (lambda value: value.encode('utf-8')),
-    TagNumber.UniversalString: (lambda value: value.encode('utf-32')),
-    TagNumber.BMPString: encode_bmp_string,
-    TagNumber.NumericString: encode_restricted_string,
-    TagNumber.PrintableString: encode_restricted_string,
-    TagNumber.T61String: encode_restricted_string,
-    TagNumber.IA5String: encode_restricted_string,
     TagNumber.ObjectIdentifier: ObjectIdentifier.encode,
+    # ObjectDescriptor
+    # External
     TagNumber.Real: Real.encode,
+    TagNumber.Enumerated: signed_int_to_bytes,
+    # RelativeOID
+    TagNumber.Time: None,
+    # Sequence
+    # Set
     TagNumber.GeneralizedTime: GeneralizedTime.encode,
     TagNumber.UTCTime: UTCTime.encode,
-    TagNumber.Time: None,
-    TagNumber.TimeOfDay: None,
     TagNumber.Date: None,
+    TagNumber.TimeOfDay: None,
     TagNumber.DateTime: GeneralizedTime.encode,
     TagNumber.Duration: None
 }
+
+for tn in RESTRICTED_STRING_TAGS:
+    VALUE_TYPE_ENCODERS[tn] = partial(RestrictedString.encode, tag_number=tn)
 
 
 class Encoder:

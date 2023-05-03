@@ -28,6 +28,8 @@ class TLVTestCase(TestCase):
             encoder.append_primitive(TagNumber.BitString, value=0xf0f0, bit_length=20)
             encoder.append_primitive(TagNumber.Null, value=None)
             encoder.append_primitive(TagNumber.UTF8String, value='我的世界')
+            encoder.append_primitive(TagNumber.NumericString, value='0123456789 ')
+            encoder.append_primitive(TagNumber.PrintableString, value='aesWithSha256')
             encoder.append_primitive(TagNumber.ObjectIdentifier, value='1.2.840.113549')
 
             with encoder.construct(TagNumber.Sequence):

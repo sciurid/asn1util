@@ -6,11 +6,12 @@ logger = logging.getLogger(__name__)
 
 
 def bin_expr(octets: bytes):
+    """
+    用八位一组的二进制串（01）显示字节串
+    :param octets:
+    :return:
+    """
     return ''.join(map(lambda b: '{:08b}'.format(b), octets))
-
-
-def repr_bit_string(octets: bytes, bit_length: int):
-    return bin_expr(octets)[0:bit_length]
 
 
 __BOUNDARIES = [2 ** (n * 8 + 7) * (-1) for n in range(8)]
@@ -44,6 +45,11 @@ def unsigned_int_to_bytes(value: int):
 
 
 def ieee754_double_to_bin_string(value: float) -> str:
+    """
+    使用二进制串（01）显示双精度浮点数的符号（sign）、指数（exponent）和尾数（mantissa）部分
+    :param value:
+    :return:
+    """
     ref = struct.pack(">d", value)
     info = io.StringIO()
     info.write(f'{ref[0] >> 7:1b} ')

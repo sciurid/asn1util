@@ -165,13 +165,6 @@ UNIVERSAL_PARSERS = {
     TagNumber.ObjectIdentifier: ObjectIdentifier.decode,
     TagNumber.Real: Real.decode,
     TagNumber.Enumerated: lambda octets: int.from_bytes(octets, byteorder='big', signed=True),
-    TagNumber.UTF8String: lambda octets: octets.decode('utf-8'),
-    TagNumber.UniversalString: lambda octets: octets.decode("utf-32"),
-    TagNumber.BMPString: lambda octets: octets.decode('utf-16'),
-    TagNumber.PrintableString: decode_restricted_string,
-    TagNumber.NumericString: decode_restricted_string,
-    TagNumber.T61String: decode_restricted_string,
-    TagNumber.IA5String: decode_restricted_string,
     TagNumber.UTCTime: UTCTime.decode,
     TagNumber.GeneralizedTime: GeneralizedTime.decode,
     TagNumber.Time: None,
@@ -181,6 +174,8 @@ UNIVERSAL_PARSERS = {
     TagNumber.Duration: None
 }
 
+for tn in RESTRICTED_STRING_TAGS:
+    UNIVERSAL_PARSERS[tn] = partial(RestrictedString.decode, tag_number=tn)
 
 def token_value_to_str(token: Token, parsers: dict = None):
     if token.tag.is_primitive:

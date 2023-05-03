@@ -5,10 +5,14 @@ import isodate
 from isodate.duration import Duration
 import re
 import chardet
-from .tlv import Value, UnsupportedValueException, ValueEncodingException
+from .tlv import Value, UnsupportedValueException, ValueEncodingException, TagNumber
 
 
-class BooleanValue:
+class BooleanValue(Value):
+    def __init__(self, octets: bytes):
+        super().__init__(octets)
+        self._value = BooleanValue.decode(octets)
+
     @staticmethod
     def encode(value: Union[bool, int]) -> bytes:
         if isinstance(value, bool):
@@ -63,27 +67,60 @@ class BitString(Value):
         return bytes(octets)
 
 
-def encode_restricted_string(value: str, encoding="iso-8859-1") -> bytes:
-    return value.encode(encoding=encoding)
+RESTRICTED_PATTERNS = {
+    TagNumber.NumericString : re.compile(r'^[0-9 ]+$'),  # X680 41.2 "Table 9" (P75)
+    TagNumber.PrintableString : re.compile(r'^[0-9A-Za-z \'()\+,\-\.\/\:\=\?]+$'),  # X680 41.4 "Table 10" (P75)
+    TagNumber.IA5String : re.compile('^[\x00-\x7f]+$'),
+    TagNumber.VisibleString : re.compile('^[\x00-\x7f]+$'),
+    TagNumber.BMPString : re.compile(r'^[\u0000-\ud7ff\ue000-\uffff]*$'),
+}
 
 
-def decode_restricted_string(value: bytes, encoding=None) -> str:
-    if encoding is None:
-        charset = chardet.detect(value)
-        if charset['confidence'] >= 0.5:
-            return value.decode(encoding=charset['encoding'])
+class RestrictedString(Value):
+    """ X.680 47
+    BMPString GeneralString GraphicString IA5String ISO646String NumericString PrintableString TeletexString
+    T61String UniversalString UTF8String VideotexString VisibleString
+    """
+    def __init__(self, octets, tag_number: TagNumber, general_encoding):
+        super().__init__(octets)
+        encoding = RestrictedString.get_encoding(tag_number)
+        self._value = RestrictedString._check_supported_and_return(
+            octets.decode(encoding if encoding else general_encoding), tag_number)
+
+
+    @staticmethod
+    def get_encoding(tag_number:TagNumber):
+        if tag_number in (TagNumber.IA5String, TagNumber.VisibleString,
+                          TagNumber.NumericString, TagNumber.PrintableString):
+            return 'ascii'
+        elif tag_number in (TagNumber.BMPString,):
+            return 'utf-16be'
+        elif tag_number in (TagNumber.UniversalString,):
+            return 'utf-32be'
+        elif tag_number in (TagNumber.UTF8String,):
+            return 'utf-8'
         else:
-            return value.hex()
-    else:
-        return value.decode(encoding=encoding)
+            return None
 
+    @staticmethod
+    def _check_supported_and_return(value_string: str, tag_number: TagNumber):
+        if tag_number in RESTRICTED_PATTERNS and not RESTRICTED_PATTERNS[tag_number].match(value_string):
+            raise UnsupportedValueException(
+                f'"{value_string}"超出{TagNumber(tag_number).name}字符集范围/'
+                f' Exceeds {TagNumber(tag_number).name} string types.')
+        else:
+            return value_string
 
-PATTERN_BMP_STRING = re.compile(r'^[\u0000-\uffff]*$')
+    @staticmethod
+    def decode(value: bytes, tag_number: TagNumber, general_encoding='utf-8'):
+        return RestrictedString(value, tag_number, general_encoding)
 
+    @staticmethod
+    def encode(value: str, tag_number: TagNumber, general_encoding='utf-8'):
+        RestrictedString._check_supported_and_return(value, tag_number)
+        encoding = RestrictedString.get_encoding(tag_number)
+        return value.encode(encoding if encoding else general_encoding)
 
-def encode_bmp_string(value: str) -> bytes:
-    assert PATTERN_BMP_STRING.match(value) is not None
-    return value.encode('utf-16')
 
 
 _YEAR_G = r'(?P<year>[0-9]{4})'
