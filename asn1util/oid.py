@@ -9,21 +9,20 @@ class InvalidObjectIdentifier(UnsupportedValueException):
 
 
 class ObjectIdentifier:
-    def __init__(self, components: Iterable[int]):
-        self._components = tuple(value for value in components)
-        self._validate()
+    def __init__(self, octets: bytes):
+        sub_ids = []  # Subidentifiers (X.680 8.19.2)
+        sn = 0  # Subidentifier
+        for b in octets:
+            assert (sn != 0) or (b != 0x80)  # Subidenfier的首字节不能是0x80
+            sn = (sn << 7) | (b & 0x7f)
+            if b & 0x80 == 0:
+                sub_ids.append(sn)
+                sn = 0
+        assert octets[-1] & 0x80 == 0  # 尾字节的b8 = 0
+        component_1 = sub_ids[0] // 40 if sub_ids[0] < 80 else 2
+        component_2 = sub_ids[0] - component_1 * 40
 
-    def _validate(self):
-        if len(self._components) < 2:
-            raise InvalidObjectIdentifier('ObjectIdentifier should consist of at least 2 components.')
-        if self._components[0] in (0, 1):
-            if self._components[1] < 0 or self._components[1] > 39:
-                raise InvalidObjectIdentifier(
-                    'ObjectIdentifier value 2 should be between 0 to 39 when value 1 is 0 or 1.')
-        elif self._components[0] == 2:
-            return
-        else:
-            raise InvalidObjectIdentifier('ObjectIdentifier value 1 should be 0, 1 or 2.')
+        self._components = (component_1, component_2, *sub_ids[1:])
 
     @property
     def components(self):
@@ -37,59 +36,28 @@ class ObjectIdentifier:
         name = OIDQueryService().query(value)[1]
         return f'{value} ({name})'
 
-    def to_octets(self) -> bytes:
-        data = [self.components[0] * 40 + self.components[1]]
-        data.extend(self.components[2:])
-        data.reverse()
+    OID_STRING_PATTERN: re.Pattern = re.compile(r'^[012](\.[0-9]+)+$')
+
+    @staticmethod
+    def encode(components: Union[str, list, tuple]):
+        if instanceof(components, str):
+            mo = ObjectIdentifier.OID_STRING_PATTERN.match(value)
+            if mo is None:
+                raise InvalidObjectIdentifier(f'"{components}" is not a valid ObjectIdentifier.')
+            ObjectIdentifier.encode((int(item) for item in components.split('.')))
+
+        assert ((0 <= components[1] < 40) and (0 <= components[0] < 2)) \
+               or ((components[0] == 2) and (0 <= components[1]))
+
         octets = bytearray()
-        for comp in data:
+        for comp in reversed (components[0] * 40 + components[1], *components[2:]):
             octets.append(comp & 0x7f)
             comp >>= 7
             while comp > 0:
                 octets.append(comp & 0x7f | 0x80)
                 comp >>= 7
         octets.reverse()
-        return octets
-
-    @staticmethod
-    def encode(value: Union['ObjectIdentifier', str, Iterable[int]]):
-        if isinstance(value, ObjectIdentifier):
-            return value.to_octets()
-        elif isinstance(value, str):
-            return ObjectIdentifier.decode_string(value).to_octets()
-        elif isinstance(value, Iterable):
-            return ObjectIdentifier(value).to_octets()
-        else:
-            raise InvalidObjectIdentifier('OID value should be a string or a sequence of integers.')
-
-    OID_STRING_PATTERN: re.Pattern = re.compile(r'^[012](\.[0-9]+)+$')
-
-    @staticmethod
-    def decode_string(value: str):
-        mo = ObjectIdentifier.OID_STRING_PATTERN.match(value)
-        if mo is None:
-            raise InvalidObjectIdentifier(f'"{value}" is not a valid ObjectIdentifier.')
-        return ObjectIdentifier([int(item) for item in value.split('.')])
 
     @staticmethod
     def decode(octets: bytes):
-        components = []
-        comp = 0
-        for octet in octets:
-            comp = (comp << 7) | (octet & 0x7f)
-            if octet & 0x80 == 0:
-                components.append(comp)
-                comp = 0
-        if octets[-1] & 0x80 > 0:
-            raise InvalidObjectIdentifier(f'Last octet of encoded object identifier with b8 = 1.')
-
-        combined = components[0]
-
-        if combined < 80:
-            components[0] -= (combined // 40) * 40
-            components.insert(0, combined // 40)
-        else:
-            components[0] -= 80
-            components.insert(0, 2)
-
-        return ObjectIdentifier(components)
+        return ObjectIdentifier(octets)

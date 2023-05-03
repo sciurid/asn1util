@@ -141,14 +141,6 @@ class Tag:
         tc = Tag.TAG_CLASS_ABBR[self.cls]
         tn = TagNumber(self.number).name if (self.cls == TagClass.UNIVERSAL and self.number in TagNumber.values) else ''
         return f'{tc}.{tn}({repr(self)})'
-        # if tn is not None:
-        #     return f'{repr(self)} ({tn.name})'
-        # else:
-        #     return f'{repr(self)} (N/A)'
-        #
-        # if self.cls == TagClass.UNIVERSAL:
-        # else:
-        #     return f'{repr(self)} ({Tag.TAG_CLASS_ABBR[self.cls]})'
 
     @staticmethod
     def build(cls: TagClass, pc: TagPC, number: int) -> 'Tag':
