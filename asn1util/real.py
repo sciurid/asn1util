@@ -411,7 +411,7 @@ class Real(Value):
     @staticmethod
     def _decode_base10(octets: bytes) -> Decimal:
         logger.debug('-= Decode Base 10 =-')
-        logger.debug(f'Input={octets.hex(" ")} ({octets[1:].decode("ascii")})')
+        logger.debug(f'Input={octets.hex(" ")}')
         assert octets[0] & 0xC0 == 0
         nr = octets[0] & 0x3f
         if nr == 0x01 or nr == 0x02 or nr == 0x03:  # nr1, nr2, nr3

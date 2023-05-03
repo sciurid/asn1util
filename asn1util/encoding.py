@@ -36,8 +36,12 @@ class BitString(Value):
         self._value = int.from_bytes(self._octets[1:], byteorder='big', signed=False)
         self._value >>= initial
 
-    def __str__(self):
+    def __repr__(self):
         return f'{{:0{self._bit_length}b}}'.format(self._value)
+
+    def __str__(self):
+        return repr(self) if self._bit_length <= 16 else \
+            f'{self._value >> (self._bit_length - 16):b}...({self._bit_length} bits)'
 
     @staticmethod
     def decode(octets: bytes) -> 'BitString':

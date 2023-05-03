@@ -132,20 +132,23 @@ class Tag:
         return f'0x{self._octets.hex(" ")}'
 
     TAG_CLASS_ABBR = {
-        TagClass.UNIVERSAL: 'UNIV',
-        TagClass.APPLICATION: 'APP',
-        TagClass.CONTEXT_SPECIFIC: 'CTXT',
+        TagClass.UNIVERSAL: 'U',
+        TagClass.APPLICATION: 'A',
+        TagClass.CONTEXT_SPECIFIC: 'C',
     }
 
     def __str__(self):
-        if self.cls == TagClass.UNIVERSAL:
-            tn = TagNumber(self.number) if self.number in TagNumber.values else None
-            if tn is not None:
-                return f'{repr(self)} ({tn.name})'
-            else:
-                return f'{repr(self)} (UNKNOWN)'
-        else:
-            return f'{repr(self)} ({Tag.TAG_CLASS_ABBR[self.cls]})'
+        tc = Tag.TAG_CLASS_ABBR[self.cls]
+        tn = TagNumber(self.number).name if (self.cls == TagClass.UNIVERSAL and self.number in TagNumber.values) else ''
+        return f'{tc}.{tn}({repr(self)})'
+        # if tn is not None:
+        #     return f'{repr(self)} ({tn.name})'
+        # else:
+        #     return f'{repr(self)} (N/A)'
+        #
+        # if self.cls == TagClass.UNIVERSAL:
+        # else:
+        #     return f'{repr(self)} ({Tag.TAG_CLASS_ABBR[self.cls]})'
 
     @staticmethod
     def build(cls: TagClass, pc: TagPC, number: int) -> 'Tag':

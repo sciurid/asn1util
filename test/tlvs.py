@@ -4,7 +4,7 @@ from datetime import datetime
 from pytz import timezone
 import logging
 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)8s %(name)20s %(lineno)04s %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)8s %(name)20s %(lineno)04s %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +33,5 @@ class TLVTestCase(TestCase):
     def test_primitives(self):
         data = self.create_tlv()
         print("Encoded: " + data.hex(sep=' '))
-        decode_print(data)
+        pretty_print(Decoder(data))
 
-        for token in iter(Decoder(data)):
-            pass

@@ -1,7 +1,4 @@
-from .tlv import *
-from .encoding import *
-from .oid import *
-from .real import *
+from asn1util import *
 
 from collections import namedtuple
 from collections.abc import Iterator
@@ -25,44 +22,82 @@ class Token:
     tag: Tag
     length: Length
     offsets: TokenOffsets
-    value: bytes
+    value: Union[bytes, memoryview]
+    parent: 'Token'
+    children: list
+
+    def __str__(self):
+        return f'{str(self.tag):20s} {str(self.length):5s} ' \
+               f'({self.offsets.t:5d} {self.offsets.l:5d} {self.offsets.v:5d}) ' \
+               f'{self.value.hex(" ") if self.value else None}'
 
 
-
-def default_begin_handler(token: Token):
-    logger.debug(f'--->{token}')
-
-def default_end_handler(token: Token):
-    logger.debug(f'<---{token}')
+class TokenObserver():
+    """Observer模式的Token处理类，通过Decoder.register_observer()注册。"""
+    def on_event(self, event: str, token: Token, stack: list):
+        assert event in ('begin', 'end')
 
 class Decoder(Iterator):
+    """TLV解码器，对数据块或者二进制流进行解码。支持使用iter()迭代访问。"""
     def __init__(self, data: Union[bytes, BinaryIO]):
         super().__init__()
-        self._buffer = BytesIO(data) if isinstance(data, bytes) else data
+        if isinstance(data, bytes):
+            self._istream = BytesIO(data)
+            self._buffer = data
+        else:
+            self._istream = data
+            self._buffer = None
+        self.reset()
+
+    def reset(self):
+        self._istream.seek(0)
         self._stack = []
         self._current = None
+        self._observers = []
+        self._top_tokens = []
 
+    @property
+    def top_tokens(self):
+        return self._top_tokens
 
-    def proceed_token(self, begin_handler=default_begin_handler, end_handler=default_end_handler):
-        tof = self._buffer.tell()  # tag offset
-        tag = Tag.decode(self._buffer)  # parse tag
+    def register_observer(self, obsvr: TokenObserver):
+        self._observers.append(obsvr)
+
+    def decode(self):
+        while self.proceed_token():
+            pass
+        return self.top_tokens
+
+    def __next__(self):
+        token = self.proceed_token()
+        if token:
+            return token
+        else:
+            raise StopIteration
+
+    def proceed_token(self):
+        tof = self._istream.tell()  # tag offset
+        tag = Tag.decode(self._istream)  # parse tag
         if tag is None:  # EOF of data
             return None
 
-        lof = self._buffer.tell()  # length offset
-        length = Length.decode(self._buffer)  # parse length
+        lof = self._istream.tell()  # length offset
+        length = Length.decode(self._istream)  # parse length
 
-        vof = self._buffer.tell()  # value offset
+        vof = self._istream.tell()  # value offset
 
-        self._current = Token(tag, length, TokenOffsets(tof, lof, vof), None)
-        if begin_handler:
-            begin_handler(self._current)
+        self._current = Token(tag, length, TokenOffsets(tof, lof, vof), None, None, None)
+        if self._stack:  # 当前层级非顶级，将当前Token加入上级Constructed
+            self._current.parent = self._stack[-1]
+            self._stack[-1].children.append(self._current)
+        else:  # 当前层级为顶级，将当前Token加入self._roots
+            self._top_tokens.append(self._current)
+        self._on_token_begin()
 
         if tag.is_primitive:
             self._proceed_primitive()
-            if end_handler:
-                end_handler(self._current)
-            self._accomplish_constructed(end_handler)
+            self._on_token_end()
+            self._accomplish_constructed()
         else:
             self._proceed_constructed()
 
@@ -73,25 +108,30 @@ class Decoder(Iterator):
             raise InvalidTLV(f"Primitive tag '{tag}' with indefinite length is not supported.")
 
         l = self._current.length.value
-        value_octets = self._buffer.read(l)  # value数据字节
+        value_octets = self._istream.read(l)  # value数据字节
         if len(value_octets) < l:  # 剩余字节不足
             raise InvalidTLV(f"Not enough value octets. {l:d} required but {len(value_octets):d} remains.")
-        self._current.value = value_octets
+        if self._buffer:
+            pos = self._current.offsets.v
+            end = self._current.offsets.v + self._current.length.value
+            self._current.value = memoryview(self._buffer[pos:end])
+        else:
+            self._current.value = value_octets
 
     def _proceed_constructed(self):
+        self._current.children = []
         self._stack.append(self._current)
 
-    def _accomplish_constructed(self, end_handler=None):
+    def _accomplish_constructed(self):
         while self._stack:
             # 检查上级元素是否结束
             parent = self._stack[-1]  # 取得上级元素
             if parent.length.is_definite:  # 定长上级元素则计算累计value长度
                 expected_pos = parent.offsets.v + parent.length.value
-                current_pos = self._buffer.tell()  # 当前元素结束时的offset
+                current_pos = self._istream.tell()  # 当前元素结束时的offset
                 if expected_pos == current_pos:  # 相等则上级元素结束，退栈
-                    last = self._stack.pop()
-                    if end_handler:
-                        end_handler(last)
+                    self._current = self._stack.pop()
+                    self._on_token_end()
                 elif current_pos > expected_pos:  # 当前位置超出上级元素结束值，格式错误
                     raise InvalidTLV(f"当前位置{current_pos}超出上级元素结束值{expected_pos}")
                 else:  # 表示上级元素内部还继续有子元素
@@ -99,110 +139,33 @@ class Decoder(Iterator):
             else:  # 不定长上级元素
                 # 遇到EOC标记结尾，退栈
                 if self._current.tag.number == 0 and self._current.length.value == 0:
-                    last = self._stack.pop()
-                    if end_handler:
-                        end_handler(last)
+                    self._current = self._stack.pop()
+                    self._on_token_end()
                 else:
                     break
 
-    def __next__(self):
-        token = self.proceed_token()
-        if token:
-            return token
-        else:
-            raise StopIteration
+    def _on_token_begin(self):
+        logger.debug(f'->{"  " * len(self._stack)} {self._current}')
+        for obsvr in self._observers:
+            obsvr.on_event('begin', self._current, self._stack)
 
+    def _on_token_end(self):
+        logger.debug(f'<-{"  " * len(self._stack)} {self._current}')
+        for obsvr in self._observers:
+            obsvr.on_event('end', self._current, self._stack)
 
-
-
-def dfs_decoder(data: Union[bytes, BinaryIO], constructed_end_handler=None):
-    """
-    TLV生成器，按照DER编码顺序逐个解析TLV，即深度优先遍历（DFS）。
-    解析到原始类型TLV，则在TLV结束后返回TLVItem。
-    解析到结构类型TLV，则在TLV的T、L结束后返回TLVItem；继续执行时开始解析结构内的TLV。
-    :param data: 二进制流
-    :param constructed_end_handler: 结构类型TLV结束解析时的处理函数，参数为TLVItem。
-    :return:
-    """
-    if isinstance(data, bytes):
-        data = BytesIO(data)
-    stack = []  # 标记当前结构路径的栈
-    while True:
-        tof = data.tell()  # tag offset
-        tag = Tag.decode(data)  # parse tag
-        if tag is None:  # EOF of data
-            break
-
-        lof = data.tell()  # length offset
-        length = Length.decode(data)  # parse length
-
-        vof = data.tell()  # value offset
-        offsets = TLVOffsets(tof, lof, vof)
-
-        if tag.is_primitive:  # 基本类型
-            if not length.is_definite:  # 不应当是不定长value
-                raise InvalidTLV(f"Primitive tag '{tag}' with indefinite length is not supported.")
-            value_octets = data.read(length.value)  # value数据字节
-            if len(value_octets) < length.value:  # 剩余字节不足
-                raise InvalidTLV(f"Not enough value octets. {length.value:d} required but {len(value_octets):d} remains.")
-            if tag.number in UNIVERSAL_DECODERS:
-                handler = UNIVERSAL_DECODERS[tag.number]
-                decoded_value = handler(value_octets)
-            else:
-                decoded_value = None
-            tlv_end_offset = data.tell()
-            data.seek(tof)
-            # 返回基本类型
-            yield TLVItem(tag, length, value_octets, offsets, stack, decoded_value, data.read(tlv_end_offset - tof))
-
-            if len(stack) == 0:  # 根元素
-                continue
-
-            while len(stack) > 0:
-                # 检查上级元素是否结束
-                parent = stack[-1]  # 取得上级元素
-                if parent.length.is_definite:  # 定长上级元素则计算累计value长度
-                    cur_pos = data.tell()  # 当前元素结束时的offset
-                    pof = parent.offsets
-                    exp_pos = pof.v + parent.length.value  # 上级元素结束时的offset
-                    if cur_pos == exp_pos:  # 相等则上级元素结束，退栈
-                        stack.pop()
-                        if constructed_end_handler is not None:  # 如果有结构类型TLV完成处理函数，则调用
-                            data.seek(pof.t)
-                            tlv_octets = data.read(cur_pos - pof.t)
-                            constructed_item = \
-                                TLVItem(parent.tag, parent.length, tlv_octets[(pof.v - pof.t):],
-                                        offsets, stack, None, tlv_octets)
-                            constructed_end_handler(constructed_item)
-                        continue
-                    elif cur_pos > exp_pos:  # 当前位置超出上级元素结束值，格式错误
-                        raise InvalidTLV(f"Length of sub-tlvs in value {cur_pos - pof.v} "
-                                         f"exceeds the specified length {parent.length.value}.")
-                    else:
-                        break
-                else:  # 不定长上级元素
-                    if tag.number == 0 and length.value == 0:  # 遇到EOC标记结尾，退栈
-                        stack.pop()
-                        continue
-                    else:
-                        break
-        else:
-            yield TLVItem(tag, length, None, offsets, stack, None, None)  # 返回结构类型
-            stack.append(DecoderStackItem(tag, length, TLVOffsets(tof, lof, vof)))
-
-
-UNIVERSAL_DECODERS = {
-    TagNumber.EndOfContent: lambda value: None,
+UNIVERSAL_PARSERS = {
+    TagNumber.EndOfContent: lambda octets: None,
     TagNumber.Boolean: BooleanValue.decode,
-    TagNumber.Integer: lambda value: int.from_bytes(value, byteorder='big', signed=True),
+    TagNumber.Integer: lambda octets: int.from_bytes(octets, byteorder='big', signed=True),
     TagNumber.BitString: BitString.decode,
-    TagNumber.Null: lambda value: None,
+    TagNumber.Null: lambda octets: None,
     TagNumber.ObjectIdentifier: ObjectIdentifier.decode,
     TagNumber.Real: Real.decode,
-    TagNumber.Enumerated: lambda value: int.from_bytes(value, byteorder='big', signed=True),
-    TagNumber.UTF8String: lambda value: value.decode('utf-8'),
-    TagNumber.UniversalString: lambda value: value.decode("utf-32"),
-    TagNumber.BMPString: lambda value: value.decode('utf-16'),
+    TagNumber.Enumerated: lambda octets: int.from_bytes(octets, byteorder='big', signed=True),
+    TagNumber.UTF8String: lambda octets: octets.decode('utf-8'),
+    TagNumber.UniversalString: lambda octets: octets.decode("utf-32"),
+    TagNumber.BMPString: lambda octets: octets.decode('utf-16'),
     TagNumber.PrintableString: decode_restricted_string,
     TagNumber.NumericString: decode_restricted_string,
     TagNumber.T61String: decode_restricted_string,
@@ -217,26 +180,52 @@ UNIVERSAL_DECODERS = {
 }
 
 
-def decode_print(file, tag_names: dict = None):
-    for tlvitem in dfs_decoder(file):
-        indent = ' ' * 2 * len(tlvitem.stack)
-        if tlvitem.tag.is_primitive:
-            if tlvitem.tag.cls == TagClass.UNIVERSAL and tlvitem.tag.number in UNIVERSAL_DECODERS:
-                handler = UNIVERSAL_DECODERS[tlvitem.tag.number]
-                value_data = handler(tlvitem.value_octets)
-                value_string = 'N/A' if value_data is None else str(value_data)
-            else:
-                value_string = 'N/A' if tlvitem.value_octets is None else tlvitem.value_octets.hex(' ')
+def token_value_to_str(token: Token, parsers: dict = None):
+    if token.tag.is_primitive:
+        if parsers and token.tag.number in parsers:
+            return parsers[token.tag.number].parse(bytes(token.value))
+
+        if token.value is None:
+            return 'None'
+
+        if token.tag.cls == TagClass.UNIVERSAL and token.tag.number in UNIVERSAL_PARSERS:
+            value_data = UNIVERSAL_PARSERS[token.tag.number](bytes(token.value))
+            return 'None' if value_data is None else str(value_data)
         else:
-            value_string = ''
+            return 'None' if token.value is None else \
+                   f'{token.value[0:3].hex(" ")}...({len(token.value)} bytes)' if len(token.value) > 8 else \
+                   token.value.hex(' ')
+    else:
+        return '[]'
 
-        print(f'{tlvitem.offsets.t:<8d}{tlvitem.offsets.l:<8d}{tlvitem.offsets.v:<8d}'
-              f'{indent+str(tlvitem.tag):40s}{str(tlvitem.length.value) if tlvitem.length.is_definite else "INF":<6s}'
-              f'{value_string:<s}')
-        if tag_names:
-            if tlvitem.tag.value in tag_names:
-                print(' ' * 24 + indent + tag_names[tlvitem.tag.value])
-            else:
-                print(' ' * 24 + indent + '[UNKNOWN]')
 
-        # print(f'{tlvitem.tlv_octets.hex(" ")}' if tlvitem.tlv_octets is not None else '')
+class PrettyPrintObserver(TokenObserver):
+    def __init__(self, file=None):
+        self._file = file
+        print(f'{"T-Off":>8s}{"L-Off":>8s}{"V-Off":>8s}  {"Tag":40s}{"Length":>6s}  {"Value":<s}',
+              file=self._file if self._file else sys.stdout)
+
+    """美观打印ASN.1数据的Observer类"""
+    def on_event(self, event: str, token: Token, stack: list):
+        super().on_event(event, token, stack)
+        if event == 'begin' and token.tag.is_primitive:
+            return
+        if event == 'end' and not token.tag.is_primitive:
+            return
+
+        to, lo, vo = token.offsets
+        ts = f'{"  " * len(stack)}{str(token.tag)}'
+        ls = str(token.length)
+        vs = token_value_to_str(token)
+
+        print(f'{to:>8d}{lo:>8d}{vo:>8d}  {ts:40s}{ls:>6s}  {vs:<s}',
+              file=self._file if self._file else sys.stdout)
+
+
+def pretty_print(decoder: Decoder, file = None):
+    """通过PrettyPrintObserver类打印ASN.1格式数据"""
+    decoder.reset()
+    decoder.register_observer(PrettyPrintObserver())
+
+    for token in iter(decoder):
+        pass

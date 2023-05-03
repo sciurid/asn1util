@@ -61,8 +61,8 @@ class BERTLVTestCase(TestCase):
                 tag = tlvitem.tag
                 try:
                     if tag.is_primitive:
-                        if tag.number in UNIVERSAL_DECODERS:
-                            handler = UNIVERSAL_DECODERS[tag.number]
+                        if tag.number in UNIVERSAL_PARSERS:
+                            handler = UNIVERSAL_PARSERS[tag.number]
                             value_data = handler(tlvitem.value_octets)
                             encoder.append_primitive(tag_class=tag.cls, tag_number=tag.number, value=value_data)
                         else:

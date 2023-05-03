@@ -1,7 +1,7 @@
 from .tlv import UnsupportedValueException
 from typing import Iterable, Union
+from .oid_info import OIDQueryService
 import re
-
 
 class InvalidObjectIdentifier(UnsupportedValueException):
     def __init__(self, message):
@@ -31,6 +31,11 @@ class ObjectIdentifier:
 
     def __repr__(self):
         return '.'.join([str(i) for i in self._components])
+
+    def __str__(self):
+        value = repr(self)
+        name = OIDQueryService().query(value)[1]
+        return f'{value} ({name})'
 
     def to_octets(self) -> bytes:
         data = [self.components[0] * 40 + self.components[1]]
@@ -67,15 +72,15 @@ class ObjectIdentifier:
         return ObjectIdentifier([int(item) for item in value.split('.')])
 
     @staticmethod
-    def decode(data: bytes):
+    def decode(octets: bytes):
         components = []
         comp = 0
-        for octet in data:
+        for octet in octets:
             comp = (comp << 7) | (octet & 0x7f)
             if octet & 0x80 == 0:
                 components.append(comp)
                 comp = 0
-        if data[-1] & 0x80 > 0:
+        if octets[-1] & 0x80 > 0:
             raise InvalidObjectIdentifier(f'Last octet of encoded object identifier with b8 = 1.')
 
         combined = components[0]
