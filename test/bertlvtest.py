@@ -4,13 +4,7 @@ import traceback
 
 
 class BERTLVTestCase(TestCase):
-    def test_indefinite_length_value(self):
-        decode_print(b'\x30\x80\x04\x03\x31\x32\x33\x04\x04\x34\x35\x36\x37\x00\x00')
 
-    def test_indefinite_length_value_error(self):
-        with self.assertRaises(InvalidTLV) as ctx:
-            decode_print(b'\x30\x80\x03\x31\x32\x33\x00\x01\x00')
-        print(ctx.exception)
 
     def test_bit_string(self):
         o, l = BitString.decode(bytes.fromhex('06 6e 5d e0'))

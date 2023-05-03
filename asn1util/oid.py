@@ -39,24 +39,25 @@ class ObjectIdentifier:
     OID_STRING_PATTERN: re.Pattern = re.compile(r'^[012](\.[0-9]+)+$')
 
     @staticmethod
-    def encode(components: Union[str, list, tuple]):
-        if instanceof(components, str):
+    def encode(value: Union[str, list, tuple]):
+        if isinstance(value, str):
             mo = ObjectIdentifier.OID_STRING_PATTERN.match(value)
             if mo is None:
-                raise InvalidObjectIdentifier(f'"{components}" is not a valid ObjectIdentifier.')
-            ObjectIdentifier.encode((int(item) for item in components.split('.')))
+                raise InvalidObjectIdentifier(f'"{value}" is not a valid ObjectIdentifier.')
+            return ObjectIdentifier.encode([int(item) for item in value.split('.')])
 
-        assert ((0 <= components[1] < 40) and (0 <= components[0] < 2)) \
-               or ((components[0] == 2) and (0 <= components[1]))
+        assert ((0 <= value[1] < 40) and (0 <= value[0] < 2)) \
+               or ((value[0] == 2) and (0 <= value[1]))
 
         octets = bytearray()
-        for comp in reversed (components[0] * 40 + components[1], *components[2:]):
+        for comp in reversed((value[0] * 40 + value[1], *value[2:],)):
             octets.append(comp & 0x7f)
             comp >>= 7
             while comp > 0:
                 octets.append(comp & 0x7f | 0x80)
                 comp >>= 7
         octets.reverse()
+        return octets
 
     @staticmethod
     def decode(octets: bytes):

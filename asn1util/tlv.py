@@ -187,7 +187,7 @@ class Length:
         seg_len = len(self._octets)
         initial = self._octets[0]
 
-        if initial == Length.INDEFINITE:  # 不确定长度格式（X.690 8.1.3.6）
+        if initial == Length.INDEFINITE[0]:  # 不确定长度格式（X.690 8.1.3.6）
             self._value = None
         elif initial & 0x80 == 0:  # 短长度格式（X.690 8.1.3.4）
             assert seg_len == 1
@@ -200,7 +200,7 @@ class Length:
     @staticmethod
     def build(length_value: int) -> 'Length':
         if length_value is None:
-            return Length.INDEFINITE
+            return Length(Length.INDEFINITE)
         assert length_value >= 0, 'Length value is less than 0'
 
         if length_value < 127:
@@ -230,7 +230,7 @@ class Length:
     def decode(data: BinaryIO):
         buffer = data.read(1)
         if len(buffer) == 0:
-            raise InvalidTLV("Length octet is missing.")
+            raise InvalidTLV("剩余字节不足，长度缺失/ Insufficent octects, missing length.")
         initial = buffer[0]
 
         if initial == 0x80:  # Indefinite length
@@ -243,7 +243,7 @@ class Length:
             buffer.extend(data.read(initial & 0x7f))
             if len(buffer) < (initial & 0x7f) + 1:
                 raise InvalidTLV(
-                    f"Long form length with not enough additional length octets. (0x{subsequent_octets.hex()})")
+                    f"剩余字节不足，长度缺失/ Insufficent octects, incomplete length. (0x{subsequent_octets.hex()})")
             return Length(buffer)
 
     def __repr__(self):

@@ -21,7 +21,7 @@ class Singleton(type):
 class OIDQueryService(metaclass=Singleton):
     def __init__(self):
         try:
-            with open(_CACHE_FILE, 'r') as file:
+            with open(_CACHE_FILE, 'r', encoding='utf-8') as file:
                 self._local = json.load(file)
         except FileNotFoundError:
             self._local = {}
@@ -45,7 +45,7 @@ class OIDQueryService(metaclass=Singleton):
             description = bs.select('tr[bgcolor="#CCCCCC"]')[1].select('table td')[2].text.strip()
 
             self._local[oid] = (notion, description)
-            with open(_CACHE_FILE, 'w') as file:
+            with open(_CACHE_FILE, 'w', encoding='utf-8') as file:
                 json.dump(self._local, file, ensure_ascii=False)
 
         except requests.RequestException as ex:

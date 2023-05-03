@@ -27,8 +27,8 @@ class Token:
     children: list
 
     def __str__(self):
-        return f'{str(self.tag):20s} {str(self.length):5s} ' \
-               f'({self.offsets.t:5d} {self.offsets.l:5d} {self.offsets.v:5d}) ' \
+        return f'{str(self.tag)} {str(self.length)} ' \
+               f'({self.offsets.t:d} {self.offsets.l:d} {self.offsets.v:d}) ' \
                f'{self.value.hex(" ") if self.value else None}'
 
 
@@ -79,6 +79,8 @@ class Decoder(Iterator):
         tof = self._istream.tell()  # tag offset
         tag = Tag.decode(self._istream)  # parse tag
         if tag is None:  # EOF of data
+            if self._stack:
+                raise InvalidTLV(f"数据异常截断导致元素不完整/ Incomplete TLV due to data truncation: {self._stack[-1]}")
             return None
 
         lof = self._istream.tell()  # length offset
@@ -110,7 +112,7 @@ class Decoder(Iterator):
         l = self._current.length.value
         value_octets = self._istream.read(l)  # value数据字节
         if len(value_octets) < l:  # 剩余字节不足
-            raise InvalidTLV(f"Not enough value octets. {l:d} required but {len(value_octets):d} remains.")
+                raise InvalidTLV(f"数据异常截断导致元素不完整/ Incomplete TLV due to data truncation: {self._current}")
         if self._buffer:
             pos = self._current.offsets.v
             end = self._current.offsets.v + self._current.length.value
@@ -132,8 +134,8 @@ class Decoder(Iterator):
                 if expected_pos == current_pos:  # 相等则上级元素结束，退栈
                     self._current = self._stack.pop()
                     self._on_token_end()
-                elif current_pos > expected_pos:  # 当前位置超出上级元素结束值，格式错误
-                    raise InvalidTLV(f"当前位置{current_pos}超出上级元素结束值{expected_pos}")
+                elif current_pos > expected_pos:  # 当前位置超出上级元素，格式错误
+                    raise InvalidTLV(f"当前位置{current_pos}超出上级元素边界{expected_pos}")
                 else:  # 表示上级元素内部还继续有子元素
                     break
             else:  # 不定长上级元素
