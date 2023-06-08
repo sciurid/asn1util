@@ -1,6 +1,5 @@
 from asn1util import *
 
-from collections import namedtuple
 from collections.abc import Iterator
 from dataclasses import dataclass
 from io import BytesIO
@@ -9,13 +8,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
-DecoderStackItem = namedtuple('DecoderStackItem', ['tag', 'length', 'offsets'])
-TLVOffsets = namedtuple('TLVOffsets', ['t', 'l', 'v'])
-TLVItem = namedtuple('TLVItem', ['tag', 'length', 'value_octets', 'offsets', 'stack', 'decoded_value', 'tlv_octets'])
-
-
 TokenOffsets = NamedTuple('TokenOffsets', t=int, l=int, v=int)
+
 
 @dataclass
 class Token:
@@ -37,10 +31,15 @@ class TokenObserver():
     def on_event(self, event: str, token: Token, stack: list):
         assert event in ('begin', 'end')
 
+
 class Decoder(Iterator):
     """TLV解码器，对数据块或者二进制流进行解码。支持使用iter()迭代访问。"""
     def __init__(self, data: Union[bytes, BinaryIO]):
         super().__init__()
+        self._stack = []
+        self._current = None
+        self._observers = []
+        self._top_tokens = []
         if isinstance(data, bytes):
             self._istream = BytesIO(data)
             self._buffer = data
@@ -156,6 +155,7 @@ class Decoder(Iterator):
         for obsvr in self._observers:
             obsvr.on_event('end', self._current, self._stack)
 
+
 UNIVERSAL_PARSERS = {
     TagNumber.EndOfContent: lambda octets: None,
     TagNumber.Boolean: BooleanValue.decode,
@@ -174,8 +174,10 @@ UNIVERSAL_PARSERS = {
     TagNumber.Duration: None
 }
 
+
 for tn in RESTRICTED_STRING_TAGS:
     UNIVERSAL_PARSERS[tn] = partial(RestrictedString.decode, tag_number=tn)
+
 
 def token_value_to_str(token: Token, parsers: dict = None):
     if token.tag.is_primitive:
