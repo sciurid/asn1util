@@ -4,7 +4,6 @@ from typing import Union
 import isodate
 from isodate.duration import Duration
 import re
-import chardet
 from .tlv import Value, UnsupportedValueException, ValueEncodingException, TagNumber
 
 
@@ -41,7 +40,8 @@ class BitString(Value):
         self._value >>= initial
 
     def __repr__(self):
-        return f'{{:0{self._bit_length}b}}'.format(self._value)
+        fstr = f'{{:0{self._bit_length}b}}'
+        return fstr.format(self._value)
 
     def __str__(self):
         return repr(self) if self._bit_length <= 16 else \
@@ -68,11 +68,11 @@ class BitString(Value):
 
 
 RESTRICTED_PATTERNS = {
-    TagNumber.NumericString : re.compile(r'^[0-9 ]+$'),  # X680 41.2 "Table 9" (P75)
-    TagNumber.PrintableString : re.compile(r'^[0-9A-Za-z \'()\+,\-\.\/\:\=\?]+$'),  # X680 41.4 "Table 10" (P75)
-    TagNumber.IA5String : re.compile('^[\x00-\x7f]+$'),
-    TagNumber.VisibleString : re.compile('^[\x00-\x7f]+$'),
-    TagNumber.BMPString : re.compile(r'^[\u0000-\ud7ff\ue000-\uffff]*$'),
+    TagNumber.NumericString: re.compile(r'^[0-9 ]+$'),  # X680 41.2 "Table 9" (P75)
+    TagNumber.PrintableString: re.compile(r'^[0-9A-Za-z \'()\+,\-\.\/\:\=\?]+$'),  # X680 41.4 "Table 10" (P75)
+    TagNumber.IA5String: re.compile('^[\x00-\x7f]+$'),
+    TagNumber.VisibleString: re.compile('^[\x00-\x7f]+$'),
+    TagNumber.BMPString: re.compile(r'^[\u0000-\ud7ff\ue000-\uffff]*$'),
 }
 
 
@@ -87,9 +87,8 @@ class RestrictedString(Value):
         self._value = RestrictedString._check_supported_and_return(
             octets.decode(encoding if encoding else general_encoding), tag_number)
 
-
     @staticmethod
-    def get_encoding(tag_number:TagNumber):
+    def get_encoding(tag_number: TagNumber):
         if tag_number in (TagNumber.IA5String, TagNumber.VisibleString,
                           TagNumber.NumericString, TagNumber.PrintableString):
             return 'ascii'
@@ -120,7 +119,6 @@ class RestrictedString(Value):
         RestrictedString._check_supported_and_return(value, tag_number)
         encoding = RestrictedString.get_encoding(tag_number)
         return value.encode(encoding if encoding else general_encoding)
-
 
 
 _YEAR_G = r'(?P<year>[0-9]{4})'
@@ -248,7 +246,7 @@ def encode_duration(value: timedelta) -> bytes:
 
 def decode_duration(value: bytes) -> timedelta:
     res = isodate.parse_duration('P' + value.decode('ascii'))
-    if isinstance(Duration):
+    if isinstance(Duration, res):
         return res.totimedelta()
     else:
         return res

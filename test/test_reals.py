@@ -72,7 +72,3 @@ class RealValueTestCase(TestCase):
             rv = 2 ** e * n * (-1 if s else 1)
             print(dv, fv, rv)
             self.assertEqual(rv, fv)
-
-
-
-

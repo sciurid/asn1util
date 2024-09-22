@@ -27,7 +27,7 @@ class SpecialRealValue(IntEnum):
     NOT_A_NUMBER = 0x42
     MINUS_ZERO = 0x43
 
-    def to_float(self) -> bytes:
+    def to_float(self) -> float:
         if self == SpecialRealValue.PLUS_INFINITY:
             return float('inf')
         elif self == SpecialRealValue.MINUS_INFINITY:
@@ -53,9 +53,10 @@ class SpecialRealValue(IntEnum):
 
     @staticmethod
     def eval(b: int):
-        if b in SpecialRealValue.values:
+        try:
             return SpecialRealValue(b)
-        raise InvalidSpecialRealValue(f'Byte value 0x{b:01x} is not special.')
+        except ValueError as ve:
+            raise InvalidSpecialRealValue(f'Byte value 0x{b:01x} is not special.')
 
     @staticmethod
     def from_float(value: float):
@@ -91,7 +92,8 @@ _SPECIAL_REAL_VALUE_OCTETS = MappingProxyType({
 
 
 class Real(Value):
-    def __init__(self, value: Union[float, int, Decimal, SpecialRealValue, bytes]):
+    def __init__(self, value: Union[float, int, Decimal, SpecialRealValue, bytes], octets: bytes):
+        super().__init__(octets)
         if isinstance(value, SpecialRealValue):
             self._value = value
             self._octets = value.octets
@@ -188,7 +190,7 @@ class Real(Value):
                 else:
                     raise SpecialRealValue.MINUS_ZERO
             else:
-                return (-1 if sign else 0), fraction, -149  # 小数部分左移52位成为整数，次正规数的指数-126再减23
+                return (-1 if sign else 0), fraction, -149  # 小数部分左移23位成为整数，次正规数的指数减126再减23
         elif exp == 0xff:  # 无穷大或NaN
             if fraction:
                 raise SpecialRealValue.NOT_A_NUMBER
@@ -196,7 +198,7 @@ class Real(Value):
                 raise SpecialRealValue.MINUS_INFINITY if sign else SpecialRealValue.PLUS_INFINITY
         else:
             fraction |= 0x80 << 16  # 补上整数部分的1
-            return (-1 if sign else 0), fraction, exp - 150   # 小数部分左移52位成为整数，正规数的指数减去127再减23
+            return (-1 if sign else 0), fraction, exp - 150  # 小数部分左移23位成为整数，正规数的指数减127再减23
 
     @staticmethod
     def decompose_float_to_base2_sne(value: float, double: bool = True):

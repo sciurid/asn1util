@@ -29,6 +29,14 @@ class ValueEncodingException(InvalidTLV):
 
 
 class TagClass(IntEnum):
+    """
+    标签类型（tag class）：X.690 8.1.2.2 规定，标签数据的首字节的b8、b7比特标记标签类型
+    00：通用
+    01：应用
+    02：上下文有关
+    03：私有
+    参见 ISO/IEC 7816-6（GB/T 16449.6）
+    """
     UNIVERSAL = 0x00
     APPLICATION = 0x40
     CONTEXT_SPECIFIC = 0x80
@@ -36,6 +44,11 @@ class TagClass(IntEnum):
 
 
 class TagPC(IntEnum):
+    """
+    标签结构（tag rule）：X.690 8.1.2.2 规定，标签数据的首字节的b6比特标记标签结构
+    0：基本型
+    1：构造型
+    """
     PRIMITIVE = 0x00
     CONSTRUCTED = 0x20
 
@@ -74,6 +87,10 @@ class TagNumber(IntEnum):
     DateTime = 0x21
     Duration = 0x22
 
+
+"""
+字符串类型
+"""
 RESTRICTED_STRING_TAGS = (
     TagNumber.UTF8String, TagNumber.NumericString, TagNumber.PrintableString, TagNumber.TeletexString,
     TagNumber.VideotexString, TagNumber.IA5String, TagNumber.GraphicString, TagNumber.VisibleString,
@@ -98,6 +115,10 @@ TagNumber.constructed_set = {
 
 
 class Tag:
+    """
+    Tag Class
+    X.690 8.1.2
+    """
     def __init__(self, octets: bytes):
         assert isinstance(octets, bytes), 'Tag octets should be bytes'
         self._octets = memoryview(octets)
@@ -148,6 +169,7 @@ class Tag:
         TagClass.UNIVERSAL: 'U',
         TagClass.APPLICATION: 'A',
         TagClass.CONTEXT_SPECIFIC: 'C',
+        TagClass.PRIVATE: 'P'
     }
 
     def __str__(self):
@@ -264,6 +286,7 @@ class Length:
             return f"{self._value}"
         else:
             return "INDEFINITE"
+
 
 class Value:
     def __init__(self, octets: bytes):

@@ -4,8 +4,9 @@ from collections import namedtuple
 from collections.abc import Iterator
 from dataclasses import dataclass
 from io import BytesIO
-from typing import NamedTuple
+from typing import NamedTuple, BinaryIO, Union
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -17,14 +18,15 @@ TLVItem = namedtuple('TLVItem', ['tag', 'length', 'value_octets', 'offsets', 'st
 
 TokenOffsets = NamedTuple('TokenOffsets', t=int, l=int, v=int)
 
+
 @dataclass
 class Token:
     tag: Tag
     length: Length
     offsets: TokenOffsets
-    value: Union[bytes, memoryview]
-    parent: 'Token'
-    children: list
+    value: Union[bytes, memoryview, None]
+    parent: Union['Token', None]
+    children: Union[list, None]
 
     def __str__(self):
         return f'{str(self.tag)} {str(self.length)} ' \
@@ -32,10 +34,11 @@ class Token:
                f'{self.value.hex(" ") if self.value else None}'
 
 
-class TokenObserver():
+class TokenObserver:
     """Observer模式的Token处理类，通过Decoder.register_observer()注册。"""
     def on_event(self, event: str, token: Token, stack: list):
         assert event in ('begin', 'end')
+
 
 class Decoder(Iterator):
     """TLV解码器，对数据块或者二进制流进行解码。支持使用iter()迭代访问。"""
@@ -47,7 +50,12 @@ class Decoder(Iterator):
         else:
             self._istream = data
             self._buffer = None
-        self.reset()
+
+        self._istream.seek(0)
+        self._stack = []
+        self._current = None
+        self._observers = []
+        self._top_tokens = []
 
     def reset(self):
         self._istream.seek(0)
@@ -107,12 +115,12 @@ class Decoder(Iterator):
 
     def _proceed_primitive(self):
         if not self._current.length.is_definite:  # 不应当是不定长value
-            raise InvalidTLV(f"Primitive tag '{tag}' with indefinite length is not supported.")
+            raise InvalidTLV(f"Primitive tag with indefinite length is not supported: {self._current}")
 
         l = self._current.length.value
         value_octets = self._istream.read(l)  # value数据字节
         if len(value_octets) < l:  # 剩余字节不足
-                raise InvalidTLV(f"数据异常截断导致元素不完整/ Incomplete TLV due to data truncation: {self._current}")
+            raise InvalidTLV(f"数据异常截断导致元素不完整/ Incomplete TLV due to data truncation: {self._current}")
         if self._buffer:
             pos = self._current.offsets.v
             end = self._current.offsets.v + self._current.length.value
@@ -219,7 +227,7 @@ class PrettyPrintObserver(TokenObserver):
               file=self._file if self._file else sys.stdout)
 
 
-def pretty_print(decoder: Decoder, file = None):
+def pretty_print(decoder: Decoder, file=None):
     """通过PrettyPrintObserver类打印ASN.1格式数据"""
     decoder.reset()
     decoder.register_observer(PrettyPrintObserver())
