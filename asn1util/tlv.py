@@ -134,10 +134,15 @@ class Tag:
         #  X.690 8.1.2.4
         else:  # 当Tag Number为长编号（>30）时，后续字节首位为1，直至首位为0的字节
             assert tag_len > 1, 'High tag number without following octets.'
-            self._number = 0
+            self._number = initial & 0x1f
             for ind, octet in enumerate(self._octets[1:], 1):
-                assert (octet & 0x7f == 0) != (ind == 1), 'High tag number first octet with b7-b1 all zeros.'
-                assert (octet & 0x80 == 0) != (ind == tag_len - 1), 'High tag number octets do not end with b8 = 0.'
+                if ind == tag_len - 1:
+                    assert octet & 0x80 == 0, 'High tag number octets should end with b8 = 0.'
+                else:
+                    assert octet & 0x80 == 1, 'High tag number octets should be with b8 = 0 unless the last one.'
+                if ind == 1:
+                    assert octet & 0x7f != 0, 'High tag number first octet should not be with b7-b1 all zeros.'
+
                 self._number <<= 7
                 self._number += octet & 0x3f
             assert self._number >= 0x1F, 'High tag number less than 31.'
@@ -163,7 +168,7 @@ class Tag:
         return self._octets
 
     def __repr__(self):
-        return f'0x{self._octets.hex(" ")}'
+        return f'{self._octets.hex().upper()}'
 
     TAG_CLASS_ABBR = {
         TagClass.UNIVERSAL: 'U',
@@ -209,7 +214,7 @@ class Tag:
             if buffer[0] & 0x80 == 0:
                 break
 
-        return Tag(octets)
+        return Tag(bytes(octets))
 
 
 class Length:

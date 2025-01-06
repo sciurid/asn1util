@@ -114,9 +114,9 @@ class Decoder(Iterator):
         if not self._current.length.is_definite:  # 不应当是不定长value
             raise InvalidTLV(f"Primitive tag with indefinite length is not supported: {self._current}")
 
-        l = self._current.length.value
-        value_octets = self._istream.read(l)  # value数据字节
-        if len(value_octets) < l:  # 剩余字节不足
+        the_length = self._current.length.value
+        value_octets = self._istream.read(the_length)  # value数据字节
+        if len(value_octets) < the_length:  # 剩余字节不足
             raise InvalidTLV(f"数据异常截断导致元素不完整/ Incomplete TLV due to data truncation: {self._current}")
         if self._buffer:
             pos = self._current.offsets.v
@@ -226,11 +226,44 @@ class PrettyPrintObserver(TokenObserver):
         print(f'{to:>8d}{lo:>8d}{vo:>8d}  {ts:40s}{ls:>6s}  {vs:<s}',
               file=self._file if self._file else sys.stdout)
 
+    @staticmethod
+    def pretty_print(decoder: Decoder, file=None):
+        """通过PrettyPrintObserver类打印ASN.1格式数据"""
+        decoder.reset()
+        decoder.register_observer(PrettyPrintObserver())
 
-def pretty_print(decoder: Decoder, file=None):
-    """通过PrettyPrintObserver类打印ASN.1格式数据"""
-    decoder.reset()
-    decoder.register_observer(PrettyPrintObserver())
+        for _ in iter(decoder):
+            pass
 
-    for token in iter(decoder):
-        pass
+
+class TreeGenerationObserver(TokenObserver):
+    def __init__(self):
+        self._root = []
+        self._stack = [self._root]
+
+    def on_event(self, event: str, token: Token, stack: list):
+        super().on_event(event, token, stack)
+        if event == 'begin':
+            if not token.tag.is_primitive:
+                next = []
+                self._stack[-1].append((bytes(token.tag.octets), token.length.value, next))
+                self._stack.append(next)
+        if event == 'end':
+            if token.tag.is_primitive:
+                self._stack[-1].append((bytes(token.tag.octets), token.length.value, bytes(token.value)))
+            else:
+                self._stack.pop()
+
+    @staticmethod
+    def proceed(decoder: Decoder):
+        tg = TreeGenerationObserver()
+
+        decoder.reset()
+        decoder.register_observer(tg)
+        for _ in iter(decoder):
+            pass
+
+        return tg._root
+
+
+

@@ -1,3 +1,4 @@
 asn1util.egg-info/
 asn1util/__pycache__/
+test/__pycache__/
 .idea/**
