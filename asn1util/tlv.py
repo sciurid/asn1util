@@ -1,9 +1,11 @@
 from enum import IntEnum
 from typing import BinaryIO, Union
 import logging
+from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
+EMV_COMPATIBLE = True
 
 class ASN1EncodingException(Exception):
     def __init__(self, message):
@@ -121,7 +123,7 @@ class Tag:
     """
     def __init__(self, octets: bytes):
         assert isinstance(octets, bytes), 'Tag octets should be bytes'
-        self._octets = memoryview(octets)
+        self._octets = octets
 
         tag_len = len(self._octets)
         initial = self._octets[0]
@@ -134,7 +136,7 @@ class Tag:
         #  X.690 8.1.2.4
         else:  # 当Tag Number为长编号（>30）时，后续字节首位为1，直至首位为0的字节
             assert tag_len > 1, 'High tag number without following octets.'
-            self._number = initial & 0x1f
+            self._number = 0 #initial & 0x1f
             for ind, octet in enumerate(self._octets[1:], 1):
                 if ind == tag_len - 1:
                     assert octet & 0x80 == 0, 'High tag number octets should end with b8 = 0.'
@@ -145,7 +147,8 @@ class Tag:
 
                 self._number <<= 7
                 self._number += octet & 0x3f
-            assert self._number >= 0x1F, 'High tag number less than 31.'
+            if not EMV_COMPATIBLE:
+                assert self._number >= 0x1F, f'High tag number less than 31. {bytes(self._octets).hex()} {self._number}'
 
     @property
     def cls(self) -> TagClass:
@@ -164,7 +167,7 @@ class Tag:
         return self._number
 
     @property
-    def octets(self) -> memoryview:
+    def octets(self) -> bytes:
         return self._octets
 
     def __repr__(self):
@@ -199,7 +202,9 @@ class Tag:
             return Tag(bytes(res))
 
     @staticmethod
-    def decode(data: BinaryIO):
+    def decode(data: Union[bytes, bytearray, BinaryIO]):
+        if isinstance(data, bytes) or isinstance(data, bytearray):
+            data = BytesIO(data)
         buffer = data.read(1)
         if len(buffer) == 0:  # EOF of data
             return None
@@ -221,7 +226,7 @@ class Length:
     INDEFINITE = b'\x80'
 
     def __init__(self, octets: bytes):
-        self._octets = memoryview(octets)
+        self._octets = octets
 
         assert self._octets
         seg_len = len(self._octets)
@@ -283,7 +288,7 @@ class Length:
             buffer.extend(data.read(initial & 0x7f))
             if len(buffer) < (initial & 0x7f) + 1:
                 raise InvalidTLV(
-                    f"剩余字节不足，长度缺失/ Insufficent octects, incomplete length. (0x{subsequent_octets.hex()})")
+                    f"剩余字节不足，长度缺失/ Insufficent octects, incomplete length. (0x{buffer.hex()})")
             return Length(buffer)
 
     def __repr__(self):
@@ -296,7 +301,7 @@ class Length:
 class Value:
     def __init__(self, octets: bytes):
         assert isinstance(octets, bytes)
-        self._octets = memoryview(octets)
+        self._octets = octets
         self._value = None
 
     def __getitem__(self, index):

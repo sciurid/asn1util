@@ -39,11 +39,15 @@ class Encoder:
         self._stack = []
         self._data = bytearray()
 
-    def append_primitive(self, tag_number: int, tag_class: TagClass = TagClass.UNIVERSAL, raw: bytes = None, **kwargs):
+    def append_primitive(self, tag_octets: bytes, value: bytes):
+        tag = Tag.decode(tag_octets)
+        self._recursive_return(tag, value)
+
+    def append_encoded_primitive(self, tag_number: int, tag_class: TagClass = TagClass.UNIVERSAL, value: bytes = None, **kwargs):
         tag = Tag.build(tag_class, TagPC.PRIMITIVE, tag_number)
         tn = TagNumber(tag_number)
-        if raw:
-            encoded = raw
+        if value is not None:
+            encoded = value
         elif tn in VALUE_TYPE_ENCODERS:
             encoded = VALUE_TYPE_ENCODERS[tn](**kwargs)
         else:
@@ -51,14 +55,18 @@ class Encoder:
 
         self._recursive_return(tag, encoded)
 
-    def begin_constructed(self, tag_number: int, tag_class: TagClass = TagClass.UNIVERSAL):
+    def begin_constructed(self, tag_octets: bytes = None, tag_number: int = 0, tag_class: TagClass = TagClass.UNIVERSAL):
         """
         开始构造Constructed类型元素，将Tag和对应的字节数组压栈。
+        :param tag_octets:
         :param tag_number:
         :param tag_class:
         :return:
         """
-        tag = Tag.build(tag_class, TagPC.CONSTRUCTED, tag_number)
+        if tag_octets is None:
+            tag = Tag.build(tag_class, TagPC.CONSTRUCTED, tag_number)
+        else:
+            tag = Tag.decode(tag_octets)
         self._stack.append((tag, bytearray()))
 
     def end_constructed(self):

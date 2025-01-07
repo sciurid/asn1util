@@ -3,7 +3,7 @@ from asn1util import *
 from collections.abc import Iterator
 from dataclasses import dataclass
 from io import BytesIO
-from typing import NamedTuple, BinaryIO, Union
+from typing import NamedTuple, BinaryIO, Union, List
 import logging
 import sys
 
@@ -17,7 +17,7 @@ class Token:
     tag: Tag
     length: Length
     offsets: TokenOffsets
-    value: Union[bytes, memoryview, None]
+    value: Union[bytes, None]
     parent: Union['Token', None]
     children: Union[list, None]
 
@@ -80,7 +80,7 @@ class Decoder(Iterator):
         else:
             raise StopIteration
 
-    def proceed_token(self):
+    def proceed_token(self) -> Token:
         tof = self._istream.tell()  # tag offset
         tag = Tag.decode(self._istream)  # parse tag
         if tag is None:  # EOF of data
@@ -104,11 +104,12 @@ class Decoder(Iterator):
         if tag.is_primitive:
             self._proceed_primitive()
             self._on_token_end()
+            ret = self._current
             self._accomplish_constructed()
+            return ret
         else:
             self._proceed_constructed()
-
-        return self._current
+            return self._current
 
     def _proceed_primitive(self):
         if not self._current.length.is_definite:  # 不应当是不定长value
@@ -121,7 +122,7 @@ class Decoder(Iterator):
         if self._buffer:
             pos = self._current.offsets.v
             end = self._current.offsets.v + self._current.length.value
-            self._current.value = memoryview(self._buffer[pos:end])
+            self._current.value = self._buffer[pos:end]
         else:
             self._current.value = value_octets
 
@@ -198,19 +199,20 @@ def token_value_to_str(token: Token, parsers: dict = None):
             return 'None' if value_data is None else str(value_data)
         else:
             return 'None' if token.value is None else \
-                   f'{token.value[0:3].hex(" ")}...({len(token.value)} bytes)' if len(token.value) > 8 else \
+                   f'{token.value[0:32].hex(" ")}...({len(token.value)} bytes)' if len(token.value) > 32 else \
                    token.value.hex(' ')
     else:
         return '[]'
 
 
 class PrettyPrintObserver(TokenObserver):
+    """美观打印ASN.1数据的Observer类"""
+
     def __init__(self, file=None):
         self._file = file
         print(f'{"T-Off":>8s}{"L-Off":>8s}{"V-Off":>8s}  {"Tag":40s}{"Length":>6s}  {"Value":<s}',
               file=self._file if self._file else sys.stdout)
 
-    """美观打印ASN.1数据的Observer类"""
     def on_event(self, event: str, token: Token, stack: list):
         super().on_event(event, token, stack)
         if event == 'begin' and token.tag.is_primitive:
@@ -227,16 +229,21 @@ class PrettyPrintObserver(TokenObserver):
               file=self._file if self._file else sys.stdout)
 
     @staticmethod
-    def pretty_print(decoder: Decoder, file=None):
-        """通过PrettyPrintObserver类打印ASN.1格式数据"""
-        decoder.reset()
-        decoder.register_observer(PrettyPrintObserver())
+    def pretty_print(asn1data: bytes, file=None):
+        """以缩进格式打印ASN.1数据"""
+        d = Decoder(asn1data)
+        d.register_observer(PrettyPrintObserver(file=file))
 
-        for _ in iter(decoder):
+        for _ in iter(d):
             pass
 
 
 class TreeGenerationObserver(TokenObserver):
+    """
+    将ASN.1数据组织成树形结构的监听类
+    调用proceed静态方法，最终获得一个列表（list），列表由元组（tuple）构成，每个元组包含TLV三个元素（bytes, int, bytes）。
+    如果Tag是Constructed类型，则Value是一个列表（list）；如果元组是Constructed类型，则Value是一个bytes。
+    """
     def __init__(self):
         self._root = []
         self._stack = [self._root]
@@ -255,12 +262,12 @@ class TreeGenerationObserver(TokenObserver):
                 self._stack.pop()
 
     @staticmethod
-    def proceed(decoder: Decoder):
+    def proceed(asn1data: bytes) -> List:
         tg = TreeGenerationObserver()
 
-        decoder.reset()
-        decoder.register_observer(tg)
-        for _ in iter(decoder):
+        d = Decoder(asn1data)
+        d.register_observer(tg)
+        for _ in iter(d):
             pass
 
         return tg._root
