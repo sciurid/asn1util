@@ -2,12 +2,17 @@ from asn1util import *
 
 from collections.abc import Iterator
 from dataclasses import dataclass
-from io import BytesIO
-from typing import NamedTuple, BinaryIO, Union, List
+from io import BytesIO, StringIO
+from typing import NamedTuple, BinaryIO, Union, List, Tuple
 import logging
 import sys
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)
+log_fmt = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
+log_console = logging.StreamHandler()
+log_console.setFormatter(log_fmt)
+logger.addHandler(log_console)
 
 TokenOffsets = NamedTuple('TokenOffsets', t=int, l=int, v=int)
 
@@ -33,15 +38,38 @@ class TokenObserver:
         assert event in ('begin', 'end')
 
 
+def read_next_tlv(data: Union[bytes, bytearray, BinaryIO]) -> Tuple[Tag, Length, bytes]:
+    if isinstance(data, bytes) or isinstance(data, bytearray):
+        istream = BytesIO(data)
+    else:
+        istream = data
+
+    t = Tag.decode(istream)
+    if t is None:
+        raise ASN1EncodingException('Tag数据不存在')
+    l = Length.decode(istream)
+    if l is None:
+        raise ASN1EncodingException('Length数据不存在')
+    v = istream.read(l.value)
+    if v is None:
+        raise ASN1EncodingException('Value数据不存在')
+    elif len(v) < l.value:
+        raise ASN1EncodingException('Value数据长度不足')
+
+    return t, l, v
+
 class Decoder(Iterator):
     """TLV解码器，对数据块或者二进制流进行解码。支持使用iter()迭代访问。"""
-    def __init__(self, data: Union[bytes, BinaryIO]):
+    def __init__(self, data: Union[bytes, bytearray, BinaryIO]):
         super().__init__()
         self._stack = []
         self._current = None
         self._observers = []
         self._top_tokens = []
         if isinstance(data, bytes):
+            self._istream = BytesIO(data)
+            self._buffer = data
+        elif isinstance(data, bytearray):
             self._istream = BytesIO(data)
             self._buffer = data
         else:
@@ -205,7 +233,7 @@ def token_value_to_str(token: Token, parsers: dict = None):
         return '[]'
 
 
-class PrettyPrintObserver(TokenObserver):
+class PrettyPrinter(TokenObserver):
     """美观打印ASN.1数据的Observer类"""
 
     def __init__(self, file=None):
@@ -229,16 +257,22 @@ class PrettyPrintObserver(TokenObserver):
               file=self._file if self._file else sys.stdout)
 
     @staticmethod
-    def pretty_print(asn1data: bytes, file=None):
+    def print(asn1data: Union[bytes, bytearray, BinaryIO], file=None):
         """以缩进格式打印ASN.1数据"""
         d = Decoder(asn1data)
-        d.register_observer(PrettyPrintObserver(file=file))
+        d.register_observer(PrettyPrinter(file=file))
 
         for _ in iter(d):
             pass
 
+    @staticmethod
+    def prints(asn1data: Union[bytes, bytearray, BinaryIO]):
+        output = StringIO()
+        PrettyPrinter.print(asn1data, file=output)
+        return output.getvalue()
 
-class TreeGenerationObserver(TokenObserver):
+
+class TreeGenerator(TokenObserver):
     """
     将ASN.1数据组织成树形结构的监听类
     调用proceed静态方法，最终获得一个列表（list），列表由元组（tuple）构成，每个元组包含TLV三个元素（bytes, int, bytes）。
@@ -262,8 +296,8 @@ class TreeGenerationObserver(TokenObserver):
                 self._stack.pop()
 
     @staticmethod
-    def proceed(asn1data: bytes) -> List:
-        tg = TreeGenerationObserver()
+    def proceed(asn1data: Union[bytes, bytearray, BinaryIO]) -> List:
+        tg = TreeGenerator()
 
         d = Decoder(asn1data)
         d.register_observer(tg)

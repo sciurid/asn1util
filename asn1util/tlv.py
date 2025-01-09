@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 EMV_COMPATIBLE = True
 
+
 class ASN1EncodingException(Exception):
     def __init__(self, message):
         super().__init__(message)
@@ -170,6 +171,9 @@ class Tag:
     def octets(self) -> bytes:
         return self._octets
 
+    def __len__(self) -> int:
+        return len(self._octets)
+
     def __repr__(self):
         return f'{self._octets.hex().upper()}'
 
@@ -182,8 +186,9 @@ class Tag:
 
     def __str__(self):
         tc = Tag.TAG_CLASS_ABBR[self.cls]
+        tt = 'P' if self.is_primitive else 'C'
         tn = TagNumber(self.number).name if (self.cls == TagClass.UNIVERSAL and self.number in TagNumber.values) else ''
-        return f'{tc}.{tn}({repr(self)})'
+        return f'{tc}{tt}|{tn}({repr(self)})'
 
     @staticmethod
     def build(cls: TagClass, pc: TagPC, number: int) -> 'Tag':
@@ -270,6 +275,9 @@ class Length:
     @property
     def octets(self):
         return self._octets
+
+    def __len__(self) -> int:
+        return len(self._octets)
 
     @staticmethod
     def decode(data: BinaryIO):
