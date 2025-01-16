@@ -9,7 +9,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 _CACHE_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), r'.oid_cache'))
-_SERVICE_URL = r'https://chenqiang.xyz/get/'  # http://oid-info.com/get/
+_SERVICE_URL = r'https://oid-base.com/cgi-bin/display'  # http://oid-info.com/get/
+
 
 class Singleton(type):
     _instances = {}
@@ -17,6 +18,7 @@ class Singleton(type):
         if cls not in cls._instances:
             cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
         return cls._instances[cls]
+
 
 class OIDQueryService(metaclass=Singleton):
     def __init__(self):
@@ -33,10 +35,10 @@ class OIDQueryService(metaclass=Singleton):
             if oid in self._local:
                 return self._local[oid]
             elif not remote:
-                return ("N/A", "N/A")
+                return "N/A", "N/A"
 
         try:
-            resp = requests.get(_SERVICE_URL + oid, timeout=5)
+            resp = requests.get(_SERVICE_URL, params={'oid': oid, 'a': 'display'}, timeout=5)
             bs = BeautifulSoup(resp.text, 'lxml')
             if (len(bs.select('tr[bgcolor="#CCCCCC"]'))) == 0:
                 return None

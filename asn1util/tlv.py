@@ -5,9 +5,6 @@ from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
-EMV_COMPATIBLE = True
-
-
 class ASN1EncodingException(Exception):
     def __init__(self, message):
         super().__init__(message)
@@ -122,7 +119,7 @@ class Tag:
     Tag Class
     X.690 8.1.2
     """
-    def __init__(self, octets: bytes):
+    def __init__(self, octets: bytes, der: bool = False):
         assert isinstance(octets, bytes), 'Tag octets should be bytes'
         self._octets = octets
 
@@ -148,7 +145,7 @@ class Tag:
 
                 self._number <<= 7
                 self._number += octet & 0x3f
-            if not EMV_COMPATIBLE:
+            if der:
                 assert self._number >= 0x1F, f'High tag number less than 31. {bytes(self._octets).hex()} {self._number}'
 
     @property
@@ -230,7 +227,7 @@ class Tag:
 class Length:
     INDEFINITE = b'\x80'
 
-    def __init__(self, octets: bytes):
+    def __init__(self, octets: bytes, der: bool = False):
         self._octets = octets
 
         assert self._octets
@@ -238,6 +235,8 @@ class Length:
         initial = self._octets[0]
 
         if initial == Length.INDEFINITE[0]:  # 不确定长度格式（X.690 8.1.3.6）
+            if der:
+                raise ASN1EncodingException(f"DER格式不支持不定长格式/Indefinite length is not supported in DER.")
             self._value = None
         elif initial & 0x80 == 0:  # 短长度格式（X.690 8.1.3.4）
             assert seg_len == 1

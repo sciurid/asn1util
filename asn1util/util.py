@@ -14,25 +14,24 @@ def bin_expr(octets: bytes):
     return ''.join(map(lambda b: '{:08b}'.format(b), octets))
 
 
-__BOUNDARIES = [2 ** (n * 8 + 7) * (-1) for n in range(8)]
-
-
 def signed_int_to_bytes(value: int):
     """
     用最少的字节数表示有符号整数
     :param value: 整数
-    :return:
+    :return: 表示整数的字节
     """
-    for i, v in enumerate(__BOUNDARIES):  # 处理8字节以内的边界负数
-        if value == v:
-            return b'\x80' + i * b'\x00'
-
-    est_octet_len = value.bit_length() // 8 + 1
-    encoded = value.to_bytes(est_octet_len, byteorder='big', signed=True)
-    if est_octet_len > 8 and encoded[0] == 0xff and encoded[1] & 0x80 != 0:  # 处理8字节以上的边界负数
-        return encoded[1:]
+    if value == 0:
+        return b'\x00'
+    elif value > 0:
+        min_byte_len = value.bit_length() // 8 + 1
     else:
-        return encoded
+        abs_bit_len = (-value).bit_length()
+        min_byte_len = abs_bit_len // 8 + 1
+        # 处理负数补码的边界值，即长度为k字节时可以表示的最小负数为-2**(8k-1)
+        if abs_bit_len % 8 == 0 and (0x01 << (abs_bit_len - 1)) + value == 0:
+            min_byte_len -= 1
+
+    return value.to_bytes(min_byte_len, byteorder='big', signed=True)
 
 
 def unsigned_int_to_bytes(value: int):

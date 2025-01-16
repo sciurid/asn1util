@@ -33,7 +33,7 @@ class RealValueTestCase(TestCase):
         octets = Real.encode(fv)
         rv = Real.decode(octets)
         self.assertEqual(rv.to_float(), fv)
-        self.assertTrue(rv.to_decimal().is_zero())
+        self.assertTrue(rv.to_decimal().is_zero_point())
         self.assertEqual(Decimal('1.0').copy_sign(rv.to_decimal()), Decimal('-1.0'))
 
         fv = float('nan')

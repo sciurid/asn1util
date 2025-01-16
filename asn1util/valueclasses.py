@@ -21,10 +21,18 @@ class BooleanValue(Value):
         raise UnsupportedValueException(value)
 
     @staticmethod
-    def decode(value: bytes) -> bool:
+    def decode(value: bytes, der: bool = False) -> bool:
         if len(value) != 1:
-            raise UnsupportedValueException(value)
-        return value[0] != 0
+            raise UnsupportedValueException(value=value)
+        if der:
+            if value == b'\x00':
+                return False
+            elif value == b'\xff':
+                return True
+            else:
+                raise UnsupportedValueException('不符合DER规范/Not compliant with DER', value)
+        else:
+            return value[0] != 0
 
 
 class BitString(Value):
