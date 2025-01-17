@@ -21,23 +21,23 @@ class TLVTestCase(TestCase):
     def create_tlv(self):
         encoder = Encoder()
         with encoder.construct(TagNumber.Sequence):
-            encoder.append_primitive(TagNumber.Integer, value=20)
-            encoder.append_primitive(TagNumber.Real, value=Decimal('123.456'))
-            encoder.append_primitive(TagNumber.Real, value=10.625)
-            encoder.append_primitive(TagNumber.OctetString, value=bytes.fromhex('01 03 07') * 50)
-            encoder.append_primitive(TagNumber.BitString, value=0xf0f0, bit_length=20)
-            encoder.append_primitive(TagNumber.Null, value=None)
-            encoder.append_primitive(TagNumber.UTF8String, value='我的世界')
-            encoder.append_primitive(TagNumber.NumericString, value='0123456789 ')
-            encoder.append_primitive(TagNumber.PrintableString, value='aesWithSha256')
-            encoder.append_primitive(TagNumber.ObjectIdentifier, value='1.2.840.113549')
+            encoder.append_encoded_primitive(TagNumber.Integer, value=20)
+            encoder.append_encoded_primitive(TagNumber.Real, value=Decimal('123.456'))
+            encoder.append_encoded_primitive(TagNumber.Real, value=10.625)
+            encoder.append_encoded_primitive(TagNumber.OctetString, value=bytes.fromhex('01 03 07') * 50)
+            encoder.append_encoded_primitive(TagNumber.BitString, value=0xf0f0, bit_length=20)
+            encoder.append_encoded_primitive(TagNumber.Null, value=None)
+            encoder.append_encoded_primitive(TagNumber.UTF8String, value='我的世界')
+            encoder.append_encoded_primitive(TagNumber.NumericString, value='0123456789 ')
+            encoder.append_encoded_primitive(TagNumber.PrintableString, value='aesWithSha256')
+            encoder.append_encoded_primitive(TagNumber.ObjectIdentifier, value='1.2.840.113549')
 
             with encoder.construct(TagNumber.Sequence):
                 tz = timezone('Asia/Shanghai')
                 dt = tz.localize(datetime.now())
-                encoder.append_primitive(TagNumber.GeneralizedTime, value=dt)
-                encoder.append_primitive(TagNumber.UTCTime, value=dt)
-                encoder.append_primitive(TagNumber.GeneralizedTime, raw='202305032300.1+0800'.encode('utf-8'))
+                encoder.append_encoded_primitive(TagNumber.GeneralizedTime, value=dt)
+                encoder.append_encoded_primitive(TagNumber.UTCTime, value=dt)
+                encoder.append_encoded_primitive(TagNumber.GeneralizedTime, raw='202305032300.1+0800'.encode('utf-8'))
 
         return encoder.data
 

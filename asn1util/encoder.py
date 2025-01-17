@@ -4,6 +4,7 @@ from .oid import *
 from .real import *
 from contextlib import contextmanager
 from functools import partial
+from typing import *
 
 
 VALUE_TYPE_ENCODERS = {
@@ -39,8 +40,9 @@ class Encoder:
         self._stack = []
         self._data = bytearray()
 
-    def append_primitive(self, tag_octets: bytes, value: bytes):
-        tag = Tag.decode(tag_octets)
+    def append_primitive(self, tag: Tuple[bytes, Tag], value: bytes):
+        if isinstance(tag, bytes):
+            tag = Tag.decode(tag)
         self._recursive_return(tag, value)
 
     def append_encoded_primitive(self, tag_number: int, tag_class: TagClass = TagClass.UNIVERSAL, value: bytes = None, **kwargs):
@@ -89,8 +91,8 @@ class Encoder:
             self.end_constructed()
 
     def _recursive_return(self, tag: Tag, value: bytes):
-        """
-        根据Tag和Value计算Length，构造元素数据段。
+        """根据Tag和Value计算Length，构造元素数据段。
+
         如果没有上级Constructed元素，则将元素数据段附到数据流中。
         如果有，则将元素数据段附到上级元素的值数据中。
         :param tag:

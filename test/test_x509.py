@@ -9,10 +9,10 @@ logger = logging.getLogger(__name__)
 class X509TestCase(TestCase):
     def test_rsa(self):
         with open('chenqiang.me.cer', 'rb') as cert:
-            PrettyPrinter.pretty_print(cert)
+            PrettyPrinter.print(cert)
 
     def test_sm2(self):
         with open('sm2.rca.der', 'rb') as cert:
-            PrettyPrinter.pretty_print(cert)
+            PrettyPrinter.print(cert)
         with open('sm2.oca.der', 'rb') as cert:
-            PrettyPrinter.pretty_print(cert)
+            PrettyPrinter.print(cert)
