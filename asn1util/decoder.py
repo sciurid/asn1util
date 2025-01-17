@@ -34,12 +34,12 @@ def read_next_tlv(data: Union[bytes, bytearray, BinaryIO],
 
     l = Length.decode(istream)
     if l is None:
-        raise ASN1EncodingException(f'Tag存在但Length数据不存在：{t}')
-    v = istream.read(l.value)
+        raise ASN1Exception(f'Tag存在但Length数据不存在：{t}')
+    v = istream.read(l.octets)
     if v is None:
-        raise ASN1EncodingException(f'Tag和Length存在但Value数据不存在：{t}({l})')
-    elif len(v) < l.value:
-        raise ASN1EncodingException(f'Value数据长度不足：{t}({l}) vs {len(v)}')
+        raise ASN1Exception(f'Tag和Length存在但Value数据不存在：{t}({l})')
+    elif len(v) < l.octets:
+        raise ASN1Exception(f'Value数据长度不足：{t}({l}) vs {len(v)}')
 
     if return_octets:
         return t.octets, l.octets, v
@@ -200,16 +200,16 @@ class Decoder(Iterator):
         if not self._current.length.is_definite:  # 不应当是不定长value
             raise InvalidTLV(f"Primitive tag with indefinite length is not supported: {self._current}")
 
-        the_length = self._current.length.value
+        the_length = self._current.length.octets
         value_octets = self._istream.read(the_length)  # value数据字节
         if len(value_octets) < the_length:  # 剩余字节不足
             raise InvalidTLV(f"数据异常截断导致元素不完整/ Incomplete TLV due to data truncation: {self._current}")
         if self._buffer:
             pos = self._current.offsets.v
-            end = self._current.offsets.v + self._current.length.value
-            self._current.value = self._buffer[pos:end]
+            end = self._current.offsets.v + self._current.length.octets
+            self._current.octets = self._buffer[pos:end]
         else:
-            self._current.value = value_octets
+            self._current.octets = value_octets
 
     def _proceed_constructed(self):
         self._current.children = []
@@ -220,7 +220,7 @@ class Decoder(Iterator):
             # 检查上级元素是否结束
             parent = self._stack[-1]  # 取得上级元素
             if parent.length.is_definite:  # 定长上级元素则计算累计value长度
-                expected_pos = parent.offsets.v + parent.length.value
+                expected_pos = parent.offsets.v + parent.length.octets
                 current_pos = self._istream.tell()  # 当前元素结束时的offset
                 if expected_pos == current_pos:  # 相等则上级元素结束，退栈
                     self._current = self._stack.pop()
@@ -231,7 +231,7 @@ class Decoder(Iterator):
                     break
             else:  # 不定长上级元素
                 # 遇到EOC标记结尾，退栈
-                if self._current.tag.number == 0 and self._current.length.value == 0:
+                if self._current.tag.number == 0 and self._current.length.octets == 0:
                     self._current = self._stack.pop()
                     self._on_token_end()
                 else:
@@ -279,7 +279,7 @@ def token_value_to_str(token: Token, parsers: dict = None):
         if token.value is None:
             return 'None'
 
-        if token.tag.cls == TagClass.UNIVERSAL and token.tag.number in UNIVERSAL_PARSERS:
+        if token.tag.clazz == TagClass.UNIVERSAL and token.tag.number in UNIVERSAL_PARSERS:
             value_data = UNIVERSAL_PARSERS[token.tag.number](bytes(token.value))
             return 'None' if value_data is None else str(value_data)
         else:
