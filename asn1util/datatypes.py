@@ -2,6 +2,7 @@ from abc import abstractmethod
 
 from asn1util import InvalidEncoding, DERIncompatible, UnsupportedValue
 from tlv import Tag, Length
+from .util import signed_int_to_bytes
 from typing import BinaryIO, Union
 
 
@@ -95,7 +96,6 @@ class ASN1EndOfContent(ASN1DataType):
         return b''
 
 
-
 class ASN1Boolean(ASN1DataType):
     """X.690 8.2 Boolean"""
     def __init__(self, value: bool, der: bool = False):
@@ -116,9 +116,26 @@ class ASN1Boolean(ASN1DataType):
         return b'\xff' if value else b'\x00'
 
 
+class ASN1Integer(ASN1DataType):
+    """X.690 8.3 Integer"""
+    def __init__(self, value: int, der: bool = False):
+        super().__init__(Tag(b'\x02'), der)
+
+    @classmethod
+    def decode_value(cls, octets: bytes, der: bool) -> int:
+        if octets[0] == 0x00 or octets[0] == 0xff:
+            raise InvalidEncoding("Integer数值编码首字节不能全0或全1")
+        return int.from_bytes(octets, byteorder='big', signed=True)
+
+    @classmethod
+    def encode_value(cls, value: int) -> bytes:
+        return signed_int_to_bytes(value)
+
+
 
 
 DATA_TYPES = {
     b'\x00': ASN1EndOfContent,
     b'\x01': ASN1Boolean,
+    b'\x02': ASN1Integer,
 }
