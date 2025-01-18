@@ -4,7 +4,7 @@ from typing import Union
 import isodate
 from isodate.duration import Duration
 import re
-from .tlv import Value, UnsupportedValueException, ValueEncodingException, TagNumber
+from .tlv import Value, UnsupportedValue, ValueEncodingException, TagNumber
 
 
 class BooleanValue(Value):
@@ -18,19 +18,19 @@ class BooleanValue(Value):
             return b'\xff' if value else b'\x00'
         if isinstance(value, int):
             return b'\xff' if value != 0 else b'\x00'
-        raise UnsupportedValueException(value)
+        raise UnsupportedValue(value)
 
     @staticmethod
     def decode(value: bytes, der: bool = False) -> bool:
         if len(value) != 1:
-            raise UnsupportedValueException(value=value)
+            raise UnsupportedValue(value=value)
         if der:
             if value == b'\x00':
                 return False
             elif value == b'\xff':
                 return True
             else:
-                raise UnsupportedValueException('不符合DER规范/Not compliant with DER', value)
+                raise UnsupportedValue('不符合DER规范/Not compliant with DER', value)
         else:
             return value[0] != 0
 
@@ -112,7 +112,7 @@ class RestrictedString(Value):
     @staticmethod
     def _check_supported_and_return(value_string: str, tag_number: TagNumber):
         if tag_number in RESTRICTED_PATTERNS and not RESTRICTED_PATTERNS[tag_number].match(value_string):
-            raise UnsupportedValueException(
+            raise UnsupportedValue(
                 f'"{value_string}"超出{TagNumber(tag_number).name}字符集范围/'
                 f' Exceeds {TagNumber(tag_number).name} string types.')
         else:
@@ -149,7 +149,7 @@ class GeneralizedTime(Value):
         dt_str = octets.decode('utf-8')
         m = GeneralizedTime.DATETIME_PATTERN.match(dt_str)
         if m is None:
-            raise UnsupportedValueException(f"Generalized Time: {dt_str}")
+            raise UnsupportedValue(f"Generalized Time: {dt_str}")
 
         year, month, day, hour, minute, second, fraction, tz, tzsign, tzhour, tzminute = m.groups()
         if fraction:
@@ -204,7 +204,7 @@ class UTCTime(Value):
         dt_str = octets.decode('utf-8')
         m = UTCTime.DATETIME_PATTERN.match(dt_str)
         if m is None:
-            raise UnsupportedValueException(f"UTC Time: {dt_str}")
+            raise UnsupportedValue(f"UTC Time: {dt_str}")
 
         year, month, day, hour, minute, second, tz, tzsign, tzhour, tzminute = m.groups()
 

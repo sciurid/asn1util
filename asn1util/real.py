@@ -1,4 +1,4 @@
-from .tlv import UnsupportedValueException, Value
+from .tlv import UnsupportedValue, Value
 from .util import *
 from decimal import Decimal, Context, getcontext
 from typing import Union
@@ -11,12 +11,12 @@ import math
 logger = logging.getLogger(__name__)
 
 
-class InvalidReal(UnsupportedValueException):
+class InvalidReal(UnsupportedValue):
     def __init__(self, message):
         super().__init__(message)
 
 
-class InvalidSpecialRealValue(UnsupportedValueException):
+class InvalidSpecialRealValue(UnsupportedValue):
     def __init__(self, message):
         super().__init__(message)
 

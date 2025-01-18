@@ -8,7 +8,7 @@ from typing import *
 
 
 VALUE_TYPE_ENCODERS = {
-    TagNumber.EndOfContent: (lambda value: b''),
+    TagNumber.ASN1EndOfContent: (lambda value: b''),
     TagNumber.Boolean: BooleanValue.encode,
     TagNumber.Integer: signed_int_to_bytes,
     TagNumber.BitString: BitString.encode,

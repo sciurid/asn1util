@@ -1,9 +1,9 @@
-from .tlv import UnsupportedValueException
+from .tlv import UnsupportedValue
 from typing import Iterable, Union
 from .oid_info import OIDQueryService
 import re
 
-class InvalidObjectIdentifier(UnsupportedValueException):
+class InvalidObjectIdentifier(UnsupportedValue):
     def __init__(self, message):
         self.message = message
 

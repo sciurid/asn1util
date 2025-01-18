@@ -166,6 +166,12 @@ class Tag:
     def __repr__(self):
         return f'{self._octets.hex().upper()}'
 
+    def __eq__(self, other: 'Tag'):
+        return self._octets == other._octets
+
+    def __hash__(self):
+        return hash(self._octets)
+
     TAG_CLASS_ABBR = {
         Class.UNIVERSAL: 'U',
         Class.APPLICATION: 'A',
@@ -242,12 +248,12 @@ class Length:
 
         if leading == Length.INDEFINITE:
             if der:
-                raise InvalidEncoding(f"DER格式不支持不定长格式/Indefinite length is not supported in DER.", octets)
-            self._length = None
+                raise DERIncompatible(f"DER格式不支持不定长格式/Indefinite length is not supported in DER.", octets)
+            self._value = None
         elif leading & 0x80 == 0:  # 短格式（X.690 8.1.3.4）
             if seg_len != 1:
                 raise InvalidEncoding("短格式不是单字节表示/Not a single octet for a short form length.", octets)
-            self._length = leading & 0x7f
+            self._value = leading & 0x7f
         else:  # 长格式（X.690 8.1.3.5）
             if leading == 0xff:
                 raise InvalidEncoding("长格式首字节是0xff/Leading octet 0xff for a long form length.", octets)
@@ -255,7 +261,7 @@ class Length:
                 raise InvalidEncoding("长格式首字节表示的后续字节数{0:d}与实际字节数{1:d}不对应/"
                                       "Leading octet indicating count {0:d}not match subsequent {1:d} octets."
                                       .format(leading & 0x7f, seg_len), octets)
-            self._length = int.from_bytes(self._octets[1:], byteorder='big', signed=False)
+            self._value = int.from_bytes(self._octets[1:], byteorder='big', signed=False)
 
     @staticmethod
     def build(length_value: int) -> 'Length':
@@ -278,11 +284,11 @@ class Length:
 
     @property
     def is_definite(self):
-        return self._length is not None
+        return self._value is not None
 
     @property
     def value(self):
-        return self._length
+        return self._value
 
     @property
     def octets(self):
@@ -291,8 +297,11 @@ class Length:
     def __len__(self) -> int:
         return len(self._octets)
 
+    def __int__(self) -> int:
+        return self._value
+
     @staticmethod
-    def decode(data: Union[bytes, bytearray, BinaryIO]):
+    def decode(data: Union[bytes, bytearray, BinaryIO], der: bool = False) -> 'Length':
         """从字节串或者流的头部读取出Length（常用）
 
         :param data:输入的字节串或流
@@ -316,34 +325,34 @@ class Length:
                 raise InvalidTLV("剩余字节数{0:d}不足长度{1:d}/Insufficient octets {0:d} < {1:d}"
                                  .format(len(subsequent_octets), subsequent_len))
             buffer.extend(subsequent_octets)
-            return Length(bytes(buffer))
+            return Length(bytes(buffer), der)
 
     def __repr__(self):
         if self.is_definite:
-            return f"{self._length}"
+            return f"{self._value}"
         else:
             return "INDEFINITE"
 
 
-class Value:
-    def __init__(self, octets: bytes):
-        assert isinstance(octets, bytes)
-        self._octets = octets
-        self._value = None
-
-    def __getitem__(self, index):
-        return self._octets[index]
-
-    def __len__(self):
-        return len(self._octets)
-
-    def __repr__(self):
-        return self._octets.hex(' ')
-
-    @property
-    def octets(self):
-        return self._value
-
-    def __str__(self):
-        return str(self._value)
+# class Value:
+#     def __init__(self, octets: bytes):
+#         assert isinstance(octets, bytes)
+#         self._octets = octets
+#         self._value = None
+#
+#     def __getitem__(self, index):
+#         return self._octets[index]
+#
+#     def __len__(self):
+#         return len(self._octets)
+#
+#     def __repr__(self):
+#         return self._octets.hex(' ')
+#
+#     @property
+#     def octets(self):
+#         return self._value
+#
+#     def __str__(self):
+#         return str(self._value)
 

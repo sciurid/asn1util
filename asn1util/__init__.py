@@ -1,7 +1,6 @@
 from .exceptions import *
 from .tlv import *
 from .util import *
-from .valueclasses import *
 from .encoder import *
 from .decoder import *
 from .real import *

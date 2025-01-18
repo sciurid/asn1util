@@ -249,7 +249,7 @@ class Decoder(Iterator):
 
 
 UNIVERSAL_PARSERS = {
-    TagNumber.EndOfContent: lambda octets: None,
+    TagNumber.ASN1EndOfContent: lambda octets: None,
     TagNumber.Boolean: BooleanValue.decode,
     TagNumber.Integer: lambda octets: int.from_bytes(octets, byteorder='big', signed=True),
     TagNumber.BitString: BitString.decode,
