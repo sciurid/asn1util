@@ -36,10 +36,10 @@ TAG_VisibleString = Tag(b'\x1a')  # ISO646String
 TAG_GeneralString = Tag(b'\x1b')
 TAG_UniversalString = Tag(b'\x1c')  # UTF8String
 TAG_BMPString = Tag(b'\x1e')
-TAG_Date = Tag(b'\x1f')
-TAG_TimeOfDay = Tag(b'\x20')
-TAG_DateTime = Tag(b'\x21')
-TAG_Duration = Tag(b'\x22')
+# TAG_Date = Tag(b'\x1f')
+# TAG_TimeOfDay = Tag(b'\x20')
+# TAG_DateTime = Tag(b'\x21')
+# TAG_Duration = Tag(b'\x22')
 
 
 class ASN1DataType:
@@ -57,6 +57,7 @@ class ASN1DataType:
         构建过程中将检查参数一致性。
         """
         self._der = der
+        self._length = length
 
         if value is None:
             if value_octets is None:  # 数值和字节串均为None
@@ -70,12 +71,13 @@ class ASN1DataType:
                     raise ValueError("数值字节串value_octets长度与length不一致")
         else:
             self._value = value
-            if self._value_octets is None:  # 仅有数值，则通过数值计算字节串（通常应当遵循DER编码规则），常用于编码情况
+            if value_octets is None:  # 仅有数值，则通过数值计算字节串（通常应当遵循DER编码规则），常用于编码情况
                 self._value_octets = self.encode_value(value)
                 if length is None:
-                    self._length = Length.build(len(value))
-                elif len(self._value_octets) != length.value:
-                    raise ValueError("数值value编码出的字节串长度与length不一致")
+                    self._length = Length.build(len(self._value_octets))
+                else:
+                    if len(self._value_octets) != length.value:
+                        raise ValueError("数值value编码出的字节串长度与length不一致")
             else:   # 两者都有时，则保留字节串并以此计算数值（考虑到非DER等编码不唯一情况），并与数值核对
                 self._value_octets = value_octets
                 decoded = self.decode_value(self._value_octets, der)
@@ -116,12 +118,25 @@ class ASN1DataType:
         return self._value
 
     @property
+    def value_octets(self):
+        return self._value_octets
+
+    @property
     def octets(self):
-        buffer = bytearray(self._tag.octets)
+        buffer = bytearray(self.tag().octets)
         buffer.extend(self._length.octets)
         buffer.extend(self._value_octets)
         return bytes(buffer)
 
+    def __eq__(self, other):
+        return (self.tag() == other.tag() and self._length == other._length
+                and self.value == other.value)
+
+    def __repr__(self):
+        return ('[ASN.1 {}]{} ({} {} {})'
+                .format(self.tag_name(), self.value,
+                        self.tag().octets.hex().upper(), self._length.octets.hex().upper(),
+                        self._value_octets.hex().upper()))
 
 class ASN1EndOfContent(ASN1DataType):
 
@@ -141,7 +156,7 @@ class ASN1EndOfContent(ASN1DataType):
 
     @classmethod
     def decode_value(cls, octets: bytes, der: bool):
-        if octets != '':
+        if octets != b'':
             raise InvalidEncoding('EOC值字节必须为空', octets)
         return None
 
@@ -154,7 +169,7 @@ class ASN1EndOfContent(ASN1DataType):
 
 class ASN1Boolean(ASN1DataType):
     """X.690 8.2 Boolean"""
-    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
+    def __init__(self, length: Length = None, value: bool = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
     @classmethod
@@ -181,7 +196,7 @@ class ASN1Boolean(ASN1DataType):
 
 class ASN1Integer(ASN1DataType):
     """X.690 8.3 Integer"""
-    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
+    def __init__(self, length: Length = None, value: int = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
     @classmethod
@@ -194,7 +209,9 @@ class ASN1Integer(ASN1DataType):
 
     @classmethod
     def decode_value(cls, octets: bytes, der: bool) -> int:
-        if octets[0] == 0x00 or octets[0] == 0xff:
+
+        if len(octets) > 1 \
+            and ((octets[0] == 0x00 and octets[1] & 0x80 == 0) or (octets[0] == 0xff and octets[1] & 0x80 == 1)):
             raise InvalidEncoding("Integer数值编码首字节不能全0或全1")
         return int.from_bytes(octets, byteorder='big', signed=True)
 
@@ -203,12 +220,23 @@ class ASN1Integer(ASN1DataType):
         return signed_int_to_bytes(value)
 
 class ASN1Enumerated(ASN1Integer):
-    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
+    """X.690 8.4 Enumerated"""
+    def __init__(self, length: Length = None, value: int = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
     @classmethod
     def tag(cls) -> Tag:
         return TAG_Enumerated
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'Enumerated'
+
+
+class ASN1Real(ASN1DataType):
+
+    def __init__(self, length: Length = None, value: float = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
 
 
 DATA_TYPES = {

@@ -300,6 +300,9 @@ class Length:
     def __int__(self) -> int:
         return self._value
 
+    def __eq__(self, other):
+        return self._value == other._value
+
     @staticmethod
     def decode(data: Union[bytes, bytearray, BinaryIO], der: bool = False) -> 'Length':
         """从字节串或者流的头部读取出Length（常用）
