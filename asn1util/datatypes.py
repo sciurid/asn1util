@@ -1,9 +1,13 @@
-from abc import abstractmethod
+import struct
+from decimal import Decimal
 
+from .real import (SpecialRealValue, to_decimal_encoding, to_binary_encoding,
+                   int_to_base2_sne, ieee754_double_to_base2_sne, decimal_to_base2_sne, to_ieee758_double)
 from .exceptions import InvalidEncoding, DERIncompatible, UnsupportedValue
 from .tlv import Tag, Length
 from .util import signed_int_to_bytes
-from typing import BinaryIO, Union
+
+from typing import Union
 
 # X.680 Table 1 (P14)
 TAG_EOC = Tag(b'\x00')
@@ -48,8 +52,7 @@ class ASN1DataType:
     def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
         """通过标签（Tag）、长度（Length）、数值（Value）构建成的ASN.1数据对象
 
-        :param tag: ASN.1数据对象的标签
-        :param tag: ASN.1数据对象的长度
+        :param length: ASN.1数据对象的长度
         :param value: ASN.1数据对象表示的的数值
         :param value_octets: ASN.1数据对象数值的字节串表示
         :param der: ASN.1数据对象是否符合DER规范
@@ -227,10 +230,94 @@ class ASN1Enumerated(ASN1Integer):
 
 
 class ASN1Real(ASN1DataType):
-
-    def __init__(self, length: Length = None, value: float = None, value_octets: bytes = None, der: bool = False):
+    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False, base: int = 2):
+        self._base = base
         super().__init__(length, value, value_octets, der)
+        if der and base != 2 and base != 10:
+            if der:
+                raise DERIncompatible("DER编码实数Real类型仅限底数为2或10")
+        elif base not in (2, 8, 16, 10):
+            raise ValueError("实数Real类型仅限底数为2或10")
 
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_Real
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'Real'
+
+    def decode_value(self, octets: bytes, der: bool) -> Union[float, Decimal, SpecialRealValue]:
+        leading = octets[0]
+        if (b8b7 := leading & 0xc0) == 0x00:  # b8b7=0，十进制表示
+            # X.690 8.5.8 (P8)
+            if (nr := leading & 0x3f) < 4:
+                if self._der and nr != 0x03:  # DER且非NR3格式
+                    raise DERIncompatible("DER编码的十进制实数只允许ISO 6093 NR3格式")
+            else:
+                raise InvalidEncoding("无法识别的数字格式0x{:02x}".format(leading))
+            return Decimal(octets[1:].decode('ascii'))  # TODO:BER/DER编码检查
+        elif b8b7 == 0x40:  # 特殊实数 Special Real Values
+            if leading & 0x3f < 0x04:
+                return SpecialRealValue(leading)
+            else:
+                raise InvalidEncoding("特殊实数保留值{}".format(hex(leading)))
+        else:  # b8=1，二进制表示
+            s: int = 1 if leading & 0x40 == 0 else -1
+            f: int = (leading & 0x0c) >> 2
+
+            if (b2b1 := leading & 0x03) == 0x00:
+                e: int = int.from_bytes(octets[1:2], byteorder='big')
+                n: int = int.from_bytes(octets[2:], byteorder='big')
+            elif b2b1 == 0x01:
+                e: int = int.from_bytes(octets[1:3], byteorder='big')
+                n: int = int.from_bytes(octets[3:], byteorder='big')
+            elif b2b1 == 0x02:
+                e: int = int.from_bytes(octets[1:4], byteorder='big')
+                n: int = int.from_bytes(octets[4:], byteorder='big')
+            else:
+                el = int.from_bytes(octets[1:2], byteorder='big')
+                e: int = int.from_bytes(octets[2:el + 2], byteorder='big')
+                n: int = int.from_bytes(octets[el + 2:], byteorder='big')
+
+            if (b6b5 := leading & 0x30) == 0x00:
+                base = 2
+            elif b6b5 == 0x10:
+                base = 8
+                e = e * 3 + f
+            elif b6b5 == 0x20:
+                base = 16
+                e = e * 4+ f
+            else:
+                raise InvalidEncoding("二进制底数保留值{}".format(hex(leading)))
+            if base != self._base:
+                raise InvalidEncoding("二进制底数不一致{} != {:d}".format(hex(leading), self._base))
+
+            return to_ieee758_double(s, n, e)
+
+    def encode_value(self, value: Union[int, float, Decimal]) -> bytes:
+        if srv := SpecialRealValue.check_special_value(value):
+            return srv.octets
+
+        if self._base == 10:
+            if isinstance(value, float):
+                return to_decimal_encoding(Decimal(value))
+            else:
+                return to_decimal_encoding(value)
+        else:
+            if isinstance(value, int):
+                return to_binary_encoding(*int_to_base2_sne(value))
+            elif isinstance(value, float):
+                sne = ieee754_double_to_base2_sne(struct.pack('>d', value))
+                if isinstance(sne, SpecialRealValue):
+                    return bytes((sne, ))
+                else:
+                    return to_binary_encoding(*sne, base=self._base)
+            elif isinstance(value, Decimal):
+                sne = decimal_to_base2_sne(value)
+                return to_binary_encoding(*sne, base=self._base)
+            else:
+                raise ValueError("数据{}类型不是int、float或Decimal".format(value))
 
 DATA_TYPES = {
     b'\x00': ASN1EndOfContent,
