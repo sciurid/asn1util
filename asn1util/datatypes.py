@@ -395,26 +395,6 @@ class ASN1Null(ASN1DataType):
         return b''
 
 
-class ASN1Sequence(ASN1DataType):
-    def __init__(self, length: Length = None, value: Sequence[ASN1DataType] = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
-
-    @classmethod
-    def tag(cls) -> Tag:
-        return TAG_Sequence
-
-    @classmethod
-    def tag_name(cls) -> str:
-        return 'Sequence'
-
-    def decode_value(self, octets: bytes, der: bool):
-        # TODO
-        pass
-
-    def encode_value(self, value) -> bytes:
-        # TODO
-        pass
-
 class ASN1ObjectIdentifier(ASN1DataType):
     """X.690 8.19 Object Identifier (OID)
 
@@ -480,3 +460,166 @@ class ASN1ObjectIdentifier(ASN1DataType):
                 octets.append(comp & 0x7f | 0x80)
                 comp >>= 7
         return bytes(reversed(octets))
+
+
+class ASN1UnicodeString(ASN1DataType):
+    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    @classmethod
+    def encoding(cls) -> str:
+        raise NotImplementedError()
+
+    def decode_value(self, octets: bytes, der: bool):
+        return octets.decode(self.encoding())
+
+
+    def encode_value(self, value) -> bytes:
+        return value.encode(self.encoding())
+
+
+class ASN1UTF8String(ASN1UnicodeString):
+    """X 690 8.23.10"""
+    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_UTF8String
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'UTF8String'
+
+    @classmethod
+    def encoding(cls) -> str:
+        return 'utf-8'
+
+
+class ASN1UniversalString(ASN1UnicodeString):
+    """X 690 8.23.7"""
+    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    @classmethod
+    def encoding(cls) -> str:
+        return 'utf-32be'
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_UniversalString
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'UniversalString'
+
+
+class ASN1BMPString(ASN1UnicodeString):
+    """X 690 8.23.8"""
+    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    @classmethod
+    def encoding(cls) -> str:
+        return 'utf-16be'
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_BMPString
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'BMPString'
+
+class ASN1ISO2022String(ASN1DataType):
+    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    @classmethod
+    def restrict(cls, value) -> bool:
+        raise NotImplementedError()
+
+    def decode_value(self, octets: bytes, der: bool):
+        string = octets.decode('iso-8859-1')
+        if self.restrict(string):
+            raise InvalidEncoding('字符串编码不符合{}限制条件'.format(self.__class__), octets)
+        return string
+
+    def encode_value(self, value) -> bytes:
+        return self._value.encode('iso-8859-1')
+
+
+class ASN1NumericString(ASN1ISO2022String):
+
+    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    PATTERN: re.Pattern = re.compile(r'^[0-9 ]*$')
+    @classmethod
+    def restrict(cls, value) -> bool:
+        return ASN1NumericString.PATTERN.match(value) is not None
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_NumericString
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'NumericString'
+
+
+class ASN1PrintableString(ASN1ISO2022String):
+    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    PATTERN: re.Pattern = re.compile(r'^[0-9A-Za-z \'()+,-.\/:=?]*$')
+    @classmethod
+    def restrict(cls, value) -> bool:
+        return ASN1PrintableString.PATTERN.match(value) is not None
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_PrintableString
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'PrintableString'
+
+
+class ASN1VisibleString(ASN1ISO2022String):
+    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    PATTERN: re.Pattern = re.compile(r'^[\x00-\x7f]*$')
+    @classmethod
+    def restrict(cls, value) -> bool:
+        return ASN1VisibleString.PATTERN.match(value) is not None
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_VisibleString
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'VisibleString'
+
+
+
+class ASN1Sequence(ASN1DataType):
+    def __init__(self, length: Length = None, value: Sequence[ASN1DataType] = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_Sequence
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'Sequence'
+
+    def decode_value(self, octets: bytes, der: bool):
+        # TODO
+        pass
+
+    def encode_value(self, value) -> bytes:
+        # TODO
+        pass

@@ -27,7 +27,7 @@ class TLVTestCase(TestCase):
             encoder.append_encoded_primitive(TagNumber.ASN1OctetString, value=bytes.fromhex('01 03 07') * 50)
             encoder.append_encoded_primitive(TagNumber.ASN1BitString, value=0xf0f0, bit_length=20)
             encoder.append_encoded_primitive(TagNumber.ASN1Null, value=None)
-            encoder.append_encoded_primitive(TagNumber.UTF8String, value='我的世界')
+            encoder.append_encoded_primitive(TagNumber.ASN1UTF8String, value='我的世界')
             encoder.append_encoded_primitive(TagNumber.NumericString, value='0123456789 ')
             encoder.append_encoded_primitive(TagNumber.PrintableString, value='aesWithSha256')
             encoder.append_encoded_primitive(TagNumber.ObjectIdentifier, value='1.2.840.113549')

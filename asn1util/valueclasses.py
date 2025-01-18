@@ -104,7 +104,7 @@ class RestrictedString(Value):
             return 'utf-16be'
         elif tag_number in (TagNumber.UniversalString,):
             return 'utf-32be'
-        elif tag_number in (TagNumber.UTF8String,):
+        elif tag_number in (TagNumber.ASN1UTF8String,):
             return 'utf-8'
         else:
             return None
