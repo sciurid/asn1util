@@ -23,6 +23,21 @@ class UniversalClassTypes(TestCase):
             print(eR)
             self.assertEqual(eR, ASN1Enumerated(value_octets=eR.value_octets))
 
+    def test_oid(self):
+        oid = ASN1ObjectIdentifier(value='1.0.14888.3.14')
+        print(oid)
+        print(oid.value)
+        print(oid.value_octets.hex())
+        print(oid.oid_string)
+
+        r_oid = ASN1ObjectIdentifier(value=oid.value)
+        self.assertEqual(oid, r_oid)
+        r_oid = ASN1ObjectIdentifier(value_octets=oid.value_octets)
+        self.assertEqual(oid, r_oid)
+        r_oid = ASN1ObjectIdentifier(value=oid.oid_string)
+        self.assertEqual(oid, r_oid)
+
+
 
 
 

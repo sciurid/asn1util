@@ -17,8 +17,13 @@ class DERIncompatible(InvalidEncoding):
 
 
 class UnsupportedValue(ASN1Exception):
-    def __init__(self, message):
+    def __init__(self, message, data=None):
         super().__init__(message)
+        self._data = data
+
+    @property
+    def data(self):
+        return self._data
 
 
 

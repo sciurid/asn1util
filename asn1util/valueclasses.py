@@ -23,7 +23,7 @@ class BooleanValue(Value):
     @staticmethod
     def decode(value: bytes, der: bool = False) -> bool:
         if len(value) != 1:
-            raise UnsupportedValue(value=value)
+            raise UnsupportedValue(data=value)
         if der:
             if value == b'\x00':
                 return False

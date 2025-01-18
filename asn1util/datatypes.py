@@ -6,15 +6,17 @@ from .real import (SpecialRealValue, to_decimal_encoding, to_binary_encoding,
 from .exceptions import InvalidEncoding, DERIncompatible, UnsupportedValue
 from .tlv import Tag, Length
 from .util import signed_int_to_bytes
-
-from typing import Union
+import re
+from typing import Union, Tuple, Sequence
 
 # X.680 Table 1 (P14)
 TAG_EOC = Tag(b'\x00')
 TAG_Boolean = Tag(b'\x01')
 TAG_Integer = Tag(b'\x02')
 TAG_BitString = Tag(b'\x03')
+TAG_BitString_Constructed = Tag(b'\x23')
 TAG_OctetString = Tag(b'\x04')
+TAG_OctetString_Constructed = Tag(b'\x24')
 TAG_Null = Tag(b'\x05')
 TAG_ObjectIdentifier = Tag(b'\x06')
 TAG_ObjectDescriptor = Tag(b'\x07')
@@ -97,7 +99,6 @@ class ASN1DataType:
         """返回数据对象名称"""
         raise NotImplementedError()
 
-
     def decode_value(self, octets: bytes, der: bool):
         """将数值字节串转化为数值，由具体类型实现
 
@@ -139,6 +140,7 @@ class ASN1DataType:
                 .format(self.tag_name(), self.value,
                         self.tag().octets.hex().upper(), self._length.octets.hex().upper(),
                         self._value_octets.hex().upper()))
+
 
 class ASN1EndOfContent(ASN1DataType):
 
@@ -230,6 +232,7 @@ class ASN1Enumerated(ASN1Integer):
 
 
 class ASN1Real(ASN1DataType):
+    """X.690 8.4 Real"""
     def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False, base: int = 2):
         self._base = base
         super().__init__(length, value, value_octets, der)
@@ -319,8 +322,161 @@ class ASN1Real(ASN1DataType):
             else:
                 raise ValueError("数据{}类型不是int、float或Decimal".format(value))
 
-DATA_TYPES = {
-    b'\x00': ASN1EndOfContent,
-    b'\x01': ASN1Boolean,
-    b'\x02': ASN1Integer,
-}
+
+class ASN1BitString(ASN1DataType):
+    def __init__(self, length: Length = None, value: Tuple[bytes, int] = None, value_octets: bytes = None,
+                 der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'BitString'
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_BitString
+
+    def decode_value(self, octets: bytes, der: bool) -> Tuple[bytes, int]:
+        if len(octets) == 0:
+            raise InvalidEncoding("BitString至少应该有1个字节")
+        if len(octets) == 1 and octets[0] != 0x00:  # X.690 8.6.2.3
+            raise InvalidEncoding("BitString为空时首字节应该为0x00")
+        if not 0 <= octets[0] < 8:
+            raise InvalidEncoding("BitString首字节（末尾未用字符）应该为1到7")  # X.690 8.6.2.2
+        return octets[1:], octets[0]
+
+    def encode_value(self, value: Tuple[bytes, int]) -> bytes:
+        bit_string, unused = value
+        if not 0 <= unused < 8:
+            raise ValueError("BitString的末尾未用字符应当不超过7个")
+
+        return bytes((unused, )) + bit_string
+
+
+class ASN1OctetString(ASN1DataType):
+    def __init__(self, length: Length = None, value: bytes = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_OctetString
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'OctetString'
+
+    def decode_value(self, octets: bytes, der: bool):
+        return octets
+
+    def encode_value(self, value) -> bytes:
+        return value
+
+
+class ASN1Null(ASN1DataType):
+    def __init__(self, der: bool = False):
+        super().__init__(Length.build(0), None, b'')
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_Null
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'Null'
+
+    def decode_value(self, octets: bytes, der: bool):
+        if octets != b'':
+            raise InvalidEncoding('Null值字节必须为空', octets)
+        return None
+
+    def encode_value(self, value) -> bytes:
+        if value is not None:
+            raise UnsupportedValue('Null值必须为None', value)
+        return b''
+
+
+class ASN1Sequence(ASN1DataType):
+    def __init__(self, length: Length = None, value: Sequence[ASN1DataType] = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_Sequence
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'Sequence'
+
+    def decode_value(self, octets: bytes, der: bool):
+        # TODO
+        pass
+
+    def encode_value(self, value) -> bytes:
+        # TODO
+        pass
+
+class ASN1ObjectIdentifier(ASN1DataType):
+    """X.690 8.19 Object Identifier (OID)
+
+    OID的编码是由子id（subidentifier)编码按顺序链接形成的。
+    每个子id可以由字节串表示，其中每个字节的b8表示是否是末尾字节。末尾字节的b8=1，其他字节的b8=0。
+    将子id的每个字节的b7-b1链接起来构成的无符号整数即为子id的数值。子id的数值应当以最小数量的字节来编码，那么首字节不应当是0x80。
+    子id的数量比OID的元素个数少1个，原因在于最开始的子id是由最开始的2个元素编码而成的。
+    令OID的第一个元素为X，第二个元素为Y，则第一个子id为 (X * 40) + Y。
+    其他的子元素依次与后续的子id编码相同。
+    """
+    def __init__(self, length: Length = None, value: Union[str, Sequence[int]] = None,
+                 value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_ObjectIdentifier
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'ObjectIdentifier'
+
+    @property
+    def oid_string(self):
+        return '.'.join((f'{n}' for n in self._value))
+
+    def decode_value(self, octets: bytes, der: bool):
+        sub_ids = []
+        sn = 0
+        for b in octets:
+            if sn == 0 and b == 0x80:
+                raise InvalidEncoding("ObjectIdentifier中subidentifier的首字节不能为0x80", octets)
+            sn = (sn << 7) | (b & 0x7f)
+            if b & 0x80 == 0:
+                sub_ids.append(sn)
+                sn = 0
+
+        if octets[-1] & 0x80 != 0:
+            raise InvalidEncoding("ObjectIdentifier中末尾subidentifier未结束", octets)
+
+        x, y = divmod(sub_ids[0], 40) if sub_ids[0] < 80 else (2, sub_ids[0] - 80)
+
+        return x, y, *sub_ids[1:]
+
+    STRING_PATTERN: re.Pattern = re.compile(r'^[012](\.[0-9]+)+$')
+
+    def encode_value(self, value) -> bytes:
+        if isinstance(value, str):
+            if not ASN1ObjectIdentifier.STRING_PATTERN.match(value):
+                raise ValueError("ObjectIdentifier不正确：{}".format(value))
+            oid = [int(item) for item in value.split('.')]
+            self._value = tuple(oid)
+        else:
+            oid = value
+        if len(oid) < 2 or (not 0 <= oid[0] < 3) or (not 0 <= oid[1] < 40):
+            raise ValueError("ObjectIdentifier不正确：{}".format(value))
+
+        octets = bytearray()
+        for comp in reversed((oid[0] * 40 + oid[1], *oid[2:],)):
+            octets.append(comp & 0x7f)
+            comp >>= 7
+            while comp > 0:
+                octets.append(comp & 0x7f | 0x80)
+                comp >>= 7
+        return bytes(reversed(octets))

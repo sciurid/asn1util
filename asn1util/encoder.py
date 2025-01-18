@@ -11,9 +11,9 @@ VALUE_TYPE_ENCODERS = {
     TagNumber.ASN1EndOfContent: (lambda value: b''),
     TagNumber.Boolean: BooleanValue.encode,
     TagNumber.Integer: signed_int_to_bytes,
-    TagNumber.BitString: BitString.encode,
-    TagNumber.OctetString: (lambda value: value),
-    TagNumber.Null: (lambda value: b''),
+    TagNumber.ASN1BitString: BitString.encode,
+    TagNumber.ASN1OctetString: (lambda value: value),
+    TagNumber.ASN1Null: (lambda value: b''),
     TagNumber.ObjectIdentifier: ObjectIdentifier.encode,
     # ObjectDescriptor
     # External
