@@ -94,8 +94,8 @@ class ASN1DataType:
         """返回数据对象名称"""
         raise NotImplementedError()
 
-    @classmethod
-    def decode_value(cls, octets: bytes, der: bool):
+
+    def decode_value(self, octets: bytes, der: bool):
         """将数值字节串转化为数值，由具体类型实现
 
         :param octets: 数值字节串
@@ -104,8 +104,7 @@ class ASN1DataType:
         """
         raise NotImplementedError()
 
-    @classmethod
-    def encode_value(cls, value) -> bytes:
+    def encode_value(self, value) -> bytes:
         """将数值转化为数值字节串，由具体类型实现
 
         :param value: 数值
@@ -154,14 +153,12 @@ class ASN1EndOfContent(ASN1DataType):
     def tag_name(cls) -> str:
         return 'End-of-content'
 
-    @classmethod
-    def decode_value(cls, octets: bytes, der: bool):
+    def decode_value(self, octets: bytes, der: bool):
         if octets != b'':
             raise InvalidEncoding('EOC值字节必须为空', octets)
         return None
 
-    @classmethod
-    def encode_value(cls, value) -> bytes:
+    def encode_value(self, value) -> bytes:
         if value is not None:
             raise UnsupportedValue('EOC值必须为None', value)
         return b''
@@ -180,8 +177,7 @@ class ASN1Boolean(ASN1DataType):
     def tag_name(cls) -> str:
         return 'Boolean'
 
-    @classmethod
-    def decode_value(cls, octets: bytes, der: bool) -> bool:
+    def decode_value(self, octets: bytes, der: bool) -> bool:
         if octets == b'\x00':
             return False
         elif octets != b'\xff' and der:
@@ -189,8 +185,7 @@ class ASN1Boolean(ASN1DataType):
         else:
             return True
 
-    @classmethod
-    def encode_value(cls, value: bool) -> bytes:
+    def encode_value(self, value: bool) -> bytes:
         return b'\xff' if value else b'\x00'
 
 
@@ -207,16 +202,14 @@ class ASN1Integer(ASN1DataType):
     def tag_name(cls) -> str:
         return 'Integer'
 
-    @classmethod
-    def decode_value(cls, octets: bytes, der: bool) -> int:
+    def decode_value(self, octets: bytes, der: bool) -> int:
 
         if len(octets) > 1 \
             and ((octets[0] == 0x00 and octets[1] & 0x80 == 0) or (octets[0] == 0xff and octets[1] & 0x80 == 1)):
             raise InvalidEncoding("Integer数值编码首字节不能全0或全1")
         return int.from_bytes(octets, byteorder='big', signed=True)
 
-    @classmethod
-    def encode_value(cls, value: int) -> bytes:
+    def encode_value(self, value: int) -> bytes:
         return signed_int_to_bytes(value)
 
 class ASN1Enumerated(ASN1Integer):

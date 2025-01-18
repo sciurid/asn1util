@@ -1,3 +1,5 @@
+from io import StringIO
+
 from . import Length, Tag
 from .tlv import UnsupportedValue
 from .util import *
@@ -68,7 +70,7 @@ class SpecialRealValue(IntEnum):
             if dec.is_signed():
                 return SpecialRealValue.MINUS_ZERO
             else:
-                return '0.E+0'
+                raise ValueError("Decimal表示的不是特殊实数")
         elif dec.is_infinite():
             if dec.is_signed():
                 return SpecialRealValue.MINUS_INFINITY
@@ -95,7 +97,7 @@ def decimal_to_base2_sne(value: Decimal, byte_length: int = 8) -> Tuple[int, int
     :param byte_length: 整数项N的最大字节数（决定了表示的精度）
     :return: (S, N, E) 并且 abs(value) ~= N * pow(2, E)
     """
-    logger.warning("此方法通常存在精度损失，通常不应调用/ This methods may result in precision lost.")
+    logger.warning("Decimal浮点数转二进制表示时方法通常存在精度损失/Possible precision lost in decimal to binary.")
     ds, dd, de = value.as_tuple()  # 将十进制数分解为符号sign、数字digits、指数exponent
     di, df = (dd, None) if de >= 0 else (dd[0:de], dd[de:]) if len(dd) > -de else (None, dd)  # 数字部分分解为整数和小数部分
     fp = Decimal((0, df, de)) if df else Decimal(0)  # 小数部分的十进制表示
@@ -136,7 +138,12 @@ def int_to_base2_sne(value: int):
 
 
 def ieee754_double_to_base2_sne(float_octets: bytes) -> Union[Tuple[int, int, int], SpecialRealValue]:
-    """IEEE 754 双精度浮点数转为S,N,E或者特殊数"""
+    """IEEE 754 双精度浮点数转为S,N,E或者特殊数
+
+    采用IEEE 754浮点数直接转SNE的方式防止精度再次丢失
+    :param float_octets: IEEE 754表示双精度数的字节串，big-endian编码
+    :return: (S, N, E)并且 abs(value) = N * pow(2, E)或者特殊类型数
+    """
     sign = float_octets[0] >> 7
     # 符号位为首个bit
     exp = (((float_octets[0] & 0x7f) << 4) | ((float_octets[1] >> 4) & 0x0f))
@@ -177,13 +184,27 @@ def ieee754_double_to_base2_sne(float_octets: bytes) -> Union[Tuple[int, int, in
 
 
 def to_binary_encoding(s:int, n: int, e: int, base: int = 2) -> bytes:
+    """按照ASN.1 Real格式规范将SNE进行二进制编码
+
+    X.690 8.5.7 (P8)
+    :param s: 符号位
+    :param n: 尾数mantissa位
+    :param e: 指数位
+    :param base: 幂底数，取值范围为2、8、16
+    :return: 编码后的字节串
+    """
     leading: int = 0x80  # b8 = 1，表示二进制（8.5.6）
     #  b7为符号位（8.5.7.1）
     if s != 0:  # b7 = 1 if s = -1 or 0 otherwise
         leading |= 0x40
 
     #  b6,b5为进制位（8.5.7.2、8.5.7.3）
-    f = 0
+    f = 0  # 指数的余数
+    """
+    当base选择8或者16时，以2为底的指数会出现余数的情况，编码中必须将余数保留。
+    即 {2^e = 2^{3*e_8+f_8} = 8^e_8 * 2^f_8} 或 {2^e = 2^{4*e_16+f_16} = 16^e_16 * 2^f_16}。
+    如 {e = 35} 时，2 ^ 35 = 16 ^ 8 * 2 ^ 3，则存储时选base=16时，e = e //4，f = e % 4。
+    """
     if base == 8:  # b6,b5=01，表示八进制
         leading |= 0x10
         e, f = divmod(e, 3)
@@ -212,14 +233,117 @@ def to_binary_encoding(s:int, n: int, e: int, base: int = 2) -> bytes:
     return bytes(data)
 
 
+def to_decimal_encoding(value: Union[int, Decimal]) -> bytes:
+    """按照ASN.1 Real格式规范将SNE进行十进制编码
+
+    X.690 8.5.8 (P8)
+    X.690 11.3.2 (P20)
+    注意：通常不应选择用十进制方式保存二进制浮点数，以免出现精度损失情况。如确有需要，可以通过Decimal转换为特定精度。
+
+    :param value: 整数int或者十进制数Decimal
+    """
+    buffer = StringIO()
+    if isinstance(value, int):
+        if value < 0:
+            buffer.write('-')
+            abs_value = -1 * value
+        else:
+            abs_value = value
+
+        exp = 0
+        while abs_value % 10 == 0:
+            exp += 1
+            abs_value /= 10
+
+        if exp == 0:
+            buffer.write('{:d}.E+0'.format(abs_value))
+        else:
+            buffer.write('{:d}.E{:d}'.format(abs_value, exp))
+        return buffer.getvalue().encode('ascii')
+
+    if isinstance(value, Decimal):
+        sign, digits, exponent = value.as_tuple()
+        if sign != 0:
+            buffer.write('-')
+
+        while digits[-1] == 0:
+            exponent += 1
+            digits = digits[:-1]
+
+        buffer.write('{:s}E.{:d}'.format(''.join(digits), exponent))
+        return buffer.getvalue().encode('ascii')
+
+    raise ValueError("数据{}类型不是int或Decimal".format(value))
+
+
+def decode_to_float(s:int, n:int, e:int, f:int, base: int = 2):
+    """将从ASN.1的二进制形式的实数编码中解出的参数转为浮点数"""
+    assert s == 1 or s == -1
+    assert base in (2, 8, 16)
+    assert not (base == 2 and f > 0)
+
+    # 根据IEEE 754重构双精度浮点数，不直接计算，防止出现尾数过长造成过程中浮点数溢出的情况
+    fe = (e if base == 2 else e * 3 if base == 8 else e * 4) + f
+    if n.bit_length() > 53:  # 有效数的比特数超出了双精度，需要右移丢掉数据
+        logger.warning("ASN.1实数转浮点数时出现精度损失")
+        rshift = n.bit_length() - 53  # 右移至保留53个bit
+        fn = (n >> rshift) ^ ((0x01 << 52) - 1)  # 去掉首位的1
+        fe += rshift
+    else:
+        lshift = 53 - n.bit_length()
+        fn = (n << lshift) & ((0x01 << 52) - 1)  # 在52bit上向左对齐
+        fe -= lshift
+    fe += 52 + 1023  # fn的含义小数点后的52个bit，相当于在整数基础上右移了52位，因此指数增加52，再加上偏移值1023
+
+    logger.debug(f'Float:     fn={fn:052b}, fe={fe:d}')
+
+    if fe <= 0:  # 浮点数过小，调整指数为次正规数或者零，有效数整数部分为0
+        fn = (fn | (0x01 << 52)) >> (-1 * fe)  # 将首位的1补上，右移至fe=0，即指数变为-1023
+        fe = 0
+        logger.debug(f'Subnormal: fn={fn:052b}, fe={fe:d}')
+        if fn == 0:  # 绝对值低于浮点数可表示的下限，返回零
+            if s:
+                raise -0.0
+            else:
+                return 0.0
+        else:  # 绝对值在次正规数范围内，将指数调整为-1022
+            fn >>= 1  # 尾数右移1位
+            fnb = fn.to_bytes(7, byteorder='big', signed=False)
+            b1 = 0x80 if s < 0 else 0x00
+            assert fnb[0] & 0xf0 == 0
+            b2 = (0x00 & 0xf0) | (fnb[0] & 0x0f)
+    elif fe > 2047:  # 浮点数过大，通常不会出现在二进制编码中
+        return Decimal(2) ** e * Decimal(n) * (-1 if s else 1)
+    else:
+        fnb = fn.to_bytes(7, byteorder='big', signed=False)
+        assert (fe >> 4) & 0x80 == 0
+        b1 = (0x80 if s < 0 else 0x00) | (fe >> 4)
+        assert fnb[0] & 0xe0 == 0
+        b2 = ((fe << 4) & 0xf0) | (fnb[0] & 0x0f)
+
+    packed = bytearray((b1, b2,))
+    packed.extend(fnb[1:])
+    logger.debug(f'Encoded: {packed.hex(" ")}')
+    raw_float = struct.unpack('>d', packed)[0]
+
+    if __debug__:
+        res = float(n) * (b ** e) * (2 ** f) * s
+        logger.debug(f'Raw:  {raw_float:e}, {struct.pack(">d", raw_float).hex()}')
+        logger.debug(f'Calc: {res:e}, {struct.pack(">d", res).hex()}')
+        assert res == raw_float
+
+    return raw_float
 
 
 
 
+    res = n * 1.0
+    if exp < 0:
+        res /= (1 << -exp)
+    else:
+        res *= (1 << exp)
 
-
-
-
+    return -res if s < 0 else res
 
 
 class ASN1Real(ASN1DataType):
@@ -241,13 +365,75 @@ class ASN1Real(ASN1DataType):
     def tag_name(cls) -> str:
         return 'Real'
 
-    @classmethod
-    def decode_value(cls, octets: bytes, der: bool):
-        pass
+    def decode_value(self, octets: bytes, der: bool) -> Union[float, Decimal, SpecialRealValue]:
+        leading = octets[0]
+        if (b8b7 := leading & 0xc0) == 0x00:  # b8b7=0，十进制表示
+            # X.690 8.5.8 (P8)
+            if (nr := leading & 0x3f) < 4:
+                if self._der and nr != 0x03:  # DER且非NR3格式
+                    raise DERIncompatible("DER编码的十进制实数只允许ISO 6093 NR3格式")
+            else:
+                raise InvalidEncoding("无法识别的数字格式{}".format(hex(leading)))
+            return Decimal(octets[1:].decode('ascii'))  # TODO:BER/DER编码检查
+        elif b8b7 == 0x40:  # 特殊实数 Special Real Values
+            if (sv := leading & 0x3f) < 0x04:
+                return SpecialRealValue(leading & 0x0f)
+            else:
+                raise InvalidEncoding("特殊实数保留值{}".format(hex(leading)))
+        else:  # b8=1，二进制表示
+            if (b6b5 := leading & 0x30) == 0x00:
+                base = 2
+            elif b6b5 == 0x10:
+                base = 8
+            elif b6b5 == 0x20:
+                base = 16
+            else:
+                raise InvalidEncoding("二进制底数保留值{}".format(hex(leading)))
+            if base != self._base:
+                raise InvalidEncoding("二进制底数不一致{} != {:d}".format(hex(leading), self._base))
 
-    @classmethod
-    def encode_value(cls, value: Union[int, float, Decimal]) -> bytes:
-        pass
+            s: int = 1 if leading & 0x40 == 0 else -1
+            f: int = (leading & 0x0c) >> 2
+
+            if (b2b1 := leading & 0x03) == 0x00:
+                e: int = int.from_bytes(octets[1:2], byteorder='big')
+                n: int = int.from_bytes(octets[2:], byteorder='big')
+            elif b2b1 == 0x01:
+                e: int = int.from_bytes(octets[1:3], byteorder='big')
+                n: int = int.from_bytes(octets[3:], byteorder='big')
+            elif b2b1 == 0x02:
+                e: int = int.from_bytes(octets[1:4], byteorder='big')
+                n: int = int.from_bytes(octets[4:], byteorder='big')
+            else:
+                el = int.from_bytes(octets[1:2], byteorder='big')
+                e: int = int.from_bytes(octets[2:el + 2], byteorder='big')
+                n: int = int.from_bytes(octets[el + 2:], byteorder='big')
+            return decode_to_float(s, n, e, f, base)
+
+
+    def encode_value(self, value: Union[int, float, Decimal]) -> bytes:
+        if self._base == 10:
+            if isinstance(value, float):
+                return to_decimal_encoding(Decimal(value))
+            else:
+                return to_decimal_encoding(value)
+        else:
+            if isinstance(value, int):
+                return to_binary_encoding(*int_to_base2_sne(value))
+            elif isinstance(value, float):
+                sne = ieee754_double_to_base2_sne(struct.pack('>d', value))
+                if isinstance(sne, SpecialRealValue):
+                    return bytes((sne, ))
+                else:
+                    return to_binary_encoding(*sne, base=self._base)
+            elif isinstance(value, Decimal):
+                sne = decimal_to_base2_sne(value)
+                return to_binary_encoding(*sne, base=self._base)
+            else:
+                raise ValueError("数据{}类型不是int、float或Decimal".format(value))
+
+
+
 
 
 
