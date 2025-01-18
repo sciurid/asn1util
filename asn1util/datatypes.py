@@ -1,15 +1,51 @@
 from abc import abstractmethod
 
-from asn1util import InvalidEncoding, DERIncompatible, UnsupportedValue
-from tlv import Tag, Length
+from .exceptions import InvalidEncoding, DERIncompatible, UnsupportedValue
+from .tlv import Tag, Length
 from .util import signed_int_to_bytes
 from typing import BinaryIO, Union
+
+# X.680 Table 1 (P14)
+TAG_EOC = Tag(b'\x00')
+TAG_Boolean = Tag(b'\x01')
+TAG_Integer = Tag(b'\x02')
+TAG_BitString = Tag(b'\x03')
+TAG_OctetString = Tag(b'\x04')
+TAG_Null = Tag(b'\x05')
+TAG_ObjectIdentifier = Tag(b'\x06')
+TAG_ObjectDescriptor = Tag(b'\x07')
+TAG_External_InstanceOf = Tag(b'\x08')
+TAG_Real = Tag(b'\x09')
+TAG_Enumerated = Tag(b'\x0A')
+TAB_EmbeddedPdv = Tag(b'\x0B')
+TAG_UTF8String = Tag(b'\x0C')
+TAG_RelativeObjectIdentifier = Tag(b'\x0D')
+TAG_Time = Tag(b'\x0E')
+TAG_Reserved = Tag(b'\x0F')
+TAG_Sequence = Tag(b'\x30')
+TAG_Set = Tag(b'\x31')
+TAG_NumericString = Tag(b'\x12')
+TAG_PrintableString = Tag(b'\x13')
+TAG_TeletexString = Tag(b'\x14')
+TAG_VideotexString = Tag(b'\x15')
+TAG_IA5String = Tag(b'\x16')
+TAG_UTCTime = Tag(b'\x17')
+TAG_GeneralizedTime = Tag(b'\x18')
+TAG_GraphicString = Tag(b'\x19')
+TAG_VisibleString = Tag(b'\x1a')  # ISO646String
+TAG_GeneralString = Tag(b'\x1b')
+TAG_UniversalString = Tag(b'\x1c')  # UTF8String
+TAG_BMPString = Tag(b'\x1e')
+TAG_Date = Tag(b'\x1f')
+TAG_TimeOfDay = Tag(b'\x20')
+TAG_DateTime = Tag(b'\x21')
+TAG_Duration = Tag(b'\x22')
 
 
 class ASN1DataType:
     """表示各种数据格式的基类
     """
-    def __init__(self, tag: Tag, length: Length, value=None, value_octets: bytes = None, der: bool = False):
+    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
         """通过标签（Tag）、长度（Length）、数值（Value）构建成的ASN.1数据对象
 
         :param tag: ASN.1数据对象的标签
@@ -20,7 +56,6 @@ class ASN1DataType:
 
         构建过程中将检查参数一致性。
         """
-        self._tag = tag
         self._der = der
 
         if value is None:
@@ -46,6 +81,16 @@ class ASN1DataType:
                 decoded = self.decode_value(self._value_octets, der)
                 if value != decoded:
                     raise ValueError("数值value或数值字节串value_octets不一致")
+
+    @classmethod
+    def tag(cls) -> Tag:
+        """返回数据对象标签"""
+        raise NotImplementedError()
+
+    @classmethod
+    def tag_name(cls) -> str:
+        """返回数据对象名称"""
+        raise NotImplementedError()
 
     @classmethod
     def decode_value(cls, octets: bytes, der: bool):
@@ -79,9 +124,20 @@ class ASN1DataType:
 
 
 class ASN1EndOfContent(ASN1DataType):
+
     """X.690 8.1.5 EOC"""
     def __init__(self, der: bool = False):
-        super().__init__(Tag(b'\x00'), None, b'', der)
+        super().__init__(Length.build(0), None, b'')
+        if der:
+            raise DERIncompatible('DER编码中不出现不确定长度和EOC数据对象')
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_EOC
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'End-of-content'
 
     @classmethod
     def decode_value(cls, octets: bytes, der: bool):
@@ -98,9 +154,16 @@ class ASN1EndOfContent(ASN1DataType):
 
 class ASN1Boolean(ASN1DataType):
     """X.690 8.2 Boolean"""
-    def __init__(self, value: bool, der: bool = False):
-        super().__init__(Tag(b'\x01'), der)
-        self._value = value
+    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_Boolean
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'Boolean'
 
     @classmethod
     def decode_value(cls, octets: bytes, der: bool) -> bool:
@@ -118,8 +181,16 @@ class ASN1Boolean(ASN1DataType):
 
 class ASN1Integer(ASN1DataType):
     """X.690 8.3 Integer"""
-    def __init__(self, value: int, der: bool = False):
-        super().__init__(Tag(b'\x02'), der)
+    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_Integer
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'Integer'
 
     @classmethod
     def decode_value(cls, octets: bytes, der: bool) -> int:
@@ -131,7 +202,13 @@ class ASN1Integer(ASN1DataType):
     def encode_value(cls, value: int) -> bytes:
         return signed_int_to_bytes(value)
 
+class ASN1Enumerated(ASN1Integer):
+    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
 
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_Enumerated
 
 
 DATA_TYPES = {

@@ -27,7 +27,7 @@ def signed_int_to_bytes(value: int):
     else:
         abs_bit_len = (-value).bit_length()
         min_byte_len = abs_bit_len // 8 + 1
-        # 处理负数补码的边界值，即长度为k字节时可以表示的最小负数为-2**(8k-1)
+        # 处理负整数补码的边界值问题，即长度为k字节时可以表示的最小负整数为-2**(8k-1)，比相应的正整数多1个
         if abs_bit_len % 8 == 0 and (0x01 << (abs_bit_len - 1)) + value == 0:
             min_byte_len -= 1
 
