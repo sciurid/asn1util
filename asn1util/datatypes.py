@@ -1,13 +1,14 @@
+import re
+from typing import Union, Tuple, Sequence
 import struct
 from decimal import Decimal
+from datetime import datetime, timedelta, timezone
 
 from .real import (SpecialRealValue, to_decimal_encoding, to_binary_encoding,
                    int_to_base2_sne, ieee754_double_to_base2_sne, decimal_to_base2_sne, to_ieee758_double)
 from .exceptions import InvalidEncoding, DERIncompatible, UnsupportedValue
 from .tlv import Tag, Length
 from .util import signed_int_to_bytes
-import re
-from typing import Union, Tuple, Sequence
 
 # X.680 Table 1 (P14)
 TAG_EOC = Tag(b'\x00')
@@ -20,20 +21,20 @@ TAG_OctetString_Constructed = Tag(b'\x24')
 TAG_Null = Tag(b'\x05')
 TAG_ObjectIdentifier = Tag(b'\x06')
 TAG_ObjectDescriptor = Tag(b'\x07')
-TAG_External_InstanceOf = Tag(b'\x08')
+# TAG_External_InstanceOf = Tag(b'\x08')
 TAG_Real = Tag(b'\x09')
 TAG_Enumerated = Tag(b'\x0A')
-TAB_EmbeddedPdv = Tag(b'\x0B')
+# TAB_EmbeddedPdv = Tag(b'\x0B')
 TAG_UTF8String = Tag(b'\x0C')
-TAG_RelativeObjectIdentifier = Tag(b'\x0D')
+# TAG_RelativeObjectIdentifier = Tag(b'\x0D')
 TAG_Time = Tag(b'\x0E')
-TAG_Reserved = Tag(b'\x0F')
+# TAG_Reserved = Tag(b'\x0F')
 TAG_Sequence = Tag(b'\x30')
 TAG_Set = Tag(b'\x31')
 TAG_NumericString = Tag(b'\x12')
 TAG_PrintableString = Tag(b'\x13')
-TAG_TeletexString = Tag(b'\x14')
-TAG_VideotexString = Tag(b'\x15')
+# TAG_TeletexString = Tag(b'\x14')
+# TAG_VideotexString = Tag(b'\x15')
 TAG_IA5String = Tag(b'\x16')
 TAG_UTCTime = Tag(b'\x17')
 TAG_GeneralizedTime = Tag(b'\x18')
@@ -463,23 +464,27 @@ class ASN1ObjectIdentifier(ASN1DataType):
 
 
 class ASN1UnicodeString(ASN1DataType):
+    """限定类型字符串中Unicode编码的基类，是ASN1UniversalString、ASN1BMPString、ASN1UTF8String的父类。
+
+    X690 8.23 Restricted Character String
+    """
     def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
     @classmethod
     def encoding(cls) -> str:
+        """由各子类重写以实现对不同编码的限制"""
         raise NotImplementedError()
 
     def decode_value(self, octets: bytes, der: bool):
         return octets.decode(self.encoding())
-
 
     def encode_value(self, value) -> bytes:
         return value.encode(self.encoding())
 
 
 class ASN1UTF8String(ASN1UnicodeString):
-    """X 690 8.23.10"""
+    """UTF-8编码的限定类型字符串，X 690 8.23.10"""
     def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
     @classmethod
@@ -496,7 +501,13 @@ class ASN1UTF8String(ASN1UnicodeString):
 
 
 class ASN1UniversalString(ASN1UnicodeString):
-    """X 690 8.23.7"""
+    """Unicode编码（UCS-4）编码的限定类型字符串，对应于python中的UTF-32BE，每个字符由4个字节组成。
+
+    X 690 8.23.7
+    For the UniversalString type, the octet string shall contain the octets specified in ISO/IEC 10646,
+    using the 4-octet canonical form (see 13.2 of ISO/IEC 10646). Signatures shall not be used. Control
+    functions may be used provided they satisfy the restrictions imposed by 8.23.9.
+    """
     def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
@@ -514,7 +525,13 @@ class ASN1UniversalString(ASN1UnicodeString):
 
 
 class ASN1BMPString(ASN1UnicodeString):
-    """X 690 8.23.8"""
+    """Basic Multilingual Plane (BMP)区的的限定类型字符串，对应于python中的UTF-16BE，每个字符由4个字节组成。
+
+    X.690 8.23.8
+    For the BMPString type, the octet string shall contain the octets specified in ISO/IEC 10646, using
+    the 2-octet BMP form (see 13.1 of ISO/IEC 10646). Signatures shall not be used. Control functions may
+    be used provided they satisfy the restrictions imposed by 8.23.9.
+    """
     def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
@@ -531,11 +548,23 @@ class ASN1BMPString(ASN1UnicodeString):
         return 'BMPString'
 
 class ASN1ISO2022String(ASN1DataType):
+    """符合ISO/IEC 2022的8-bit字符串
+
+    X.690 8.23.5
+    For restricted character strings apart from UniversalString, UTF8String and BMPString, the octet string shall
+    contain the octets specified in ISO/IEC 2022 for encodings in an 8-bit environment, using the escape sequence
+    and character codings registered in accordance with ISO/IEC 2375.
+
+    根据Wikipedia，ISO 8859系列、GB 2312、ISO-2022-JP等标准均符合ISO/IEC 2022。
+    ISO/IEC 2022 Information technology—Character code structure and extension techniques
+    https://en.wikipedia.org/wiki/ISO/IEC_2022#Code_structure
+    """
     def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
     @classmethod
     def restrict(cls, value) -> bool:
+        """由各子类重写以实现对字符集范围的限制"""
         raise NotImplementedError()
 
     def decode_value(self, octets: bytes, der: bool):
@@ -549,7 +578,11 @@ class ASN1ISO2022String(ASN1DataType):
 
 
 class ASN1NumericString(ASN1ISO2022String):
+    """仅由数字和空格构成的字符串
 
+    X.680 41 Table 8
+    X.680 41.2 Table 9
+    """
     def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
@@ -568,6 +601,11 @@ class ASN1NumericString(ASN1ISO2022String):
 
 
 class ASN1PrintableString(ASN1ISO2022String):
+    """仅由可打印字符构成的字符串
+
+    X.680 41 Table 8
+    X.680 41.4 Table 10
+    """
     def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
@@ -586,6 +624,11 @@ class ASN1PrintableString(ASN1ISO2022String):
 
 
 class ASN1VisibleString(ASN1ISO2022String):
+    """符合ISO 646标准的字符串，字符范围在0x00-0x7f。
+
+    ISO/IEC 646 is a set of ISO/IEC standards, described as Information technology — ISO 7-bit coded character
+    set for information interchange, and developed in cooperation with ASCII at least since 1964.
+    """
     def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
@@ -603,9 +646,215 @@ class ASN1VisibleString(ASN1ISO2022String):
         return 'VisibleString'
 
 
+class ASN1GraphicString(ASN1VisibleString):
+    """暂时等同于VisibleString
+
+    相关细节待研究开发。
+    X.680 41 Table 8
+    X.690 8.23.5.2 Table 3
+    """
+    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_VisibleString
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'VisibleString'
+
+class ASN1GeneralString(ASN1ISO2022String):
+    """暂时未做限制的ISO/IEC 2022字符串
+
+    相关细节待研究开发。
+    X.680 41 Table 8
+    X.690 8.23.5.2 Table 3
+    """
+    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    @classmethod
+    def restrict(cls, value) -> bool:
+        return True
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_GeneralString
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'GeneralString'
+
+
+class ASN1IA5String(ASN1GeneralString):
+    """暂时未做限制的ISO/IEC 2022字符串
+
+    相关细节待研究开发。
+    X.680 41 Table 8
+    X.690 8.23.5.2 Table 3
+    """
+    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_IA5String
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'IA5String'
+
+_YEAR_G = r'(?P<year>[0-9]{4})'
+_YEAR_U = r'(?P<year>[0-9]{2})'
+_MONTH = r'(?P<month>0[1-9]|1[0-2])'
+_DAY = r'(?P<day>[0-2][0-9]|3[01])'
+_HOUR = r'(?P<hour>[01][0-9]|2[0-3])'
+_MINUTE = r'(?P<minute>[0-5][0-9])'
+_SECOND = r'(?P<second>[0-5][0-9])'
+_FRACTION = r'(?P<fraction>\.[0-9]+)'
+_TIMEZONE = r'(?P<tz>Z|(?P<tzsign>[+-])(?P<tzhour>0[0-9]|1[0-2])(?P<tzminute>[0-5][0-9])?)'
+
+class ASN1GeneralizedTime(ASN1DataType):
+    """通用时间
+
+    X.680 46 Generalized Time
+    X.690 11.7 GeneralizedTime
+    """
+    def __init__(self, length: Length = None, value: datetime = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    DATETIME_PATTERN = re.compile(f'^{_YEAR_G}{_MONTH}{_DAY}{_HOUR}{_MINUTE}?{_SECOND}?{_FRACTION}?{_TIMEZONE}?$')
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_GeneralizedTime
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'GeneralizedTime'
+
+    def decode_value(self, octets: bytes, der: bool):
+        dt_str = octets.decode('utf-8')
+        m = ASN1GeneralizedTime.DATETIME_PATTERN.match(dt_str)
+        if m is None:
+            raise ValueError(f"无法识别的通用时间（Generalized Time）: {dt_str}")
+
+        year, month, day, hour, minute, second, fraction, tz, tzsign, tzhour, tzminute = m.groups()
+
+        if der:
+            if not second:
+                # 11.7.2 The seconds element shall always be present.
+                raise DERIncompatible('GeneralizedTime必须要准确到秒（X.690 11.7.2）')
+            if not tz:
+                # 11.7.1 The encoding shall terminate with a "Z", as described in the Rec. ITU-T X.680 | ISO/IEC 8824-1
+                # clause on GeneralizedTime.
+                raise DERIncompatible('GeneralizedTime必须以Z结尾（X.690 11.7.1）')
+
+        if fraction:
+            if second is None:
+                if minute is None:
+                    frac_delta = timedelta(hours=float(fraction))
+                else:
+                    frac_delta = timedelta(minutes=float(fraction))
+            else:
+                frac_delta = timedelta(seconds=float(fraction))
+        else:
+            frac_delta = None
+
+        if tz == 'Z':
+            tz_delta = None
+        else:
+            if der:
+                # 11.7.1 The encoding shall terminate with a "Z", as described in the Rec. ITU-T X.680 | ISO/IEC 8824-1
+                # clause on GeneralizedTime.
+                raise DERIncompatible('GeneralizedTime必须以Z结尾（X.690 11.7.1')
+            # 本地时转化为GMT，注意-XX（西XX区）要加时刻、+XX（东时区）要减时刻
+            tz_delta = timedelta(hours=int(tzhour) if tzhour else 0,
+                                 minutes=int(tzminute) if tzminute else 0) * (1 if tzsign == '-' else -1)
+
+        dt_value = datetime(year=int(year), month=int(month), day=int(day),
+                               hour=int(hour), minute=int(minute) if minute else 0,
+                               second=int(second) if second else 0)
+        if frac_delta:
+            dt_value += frac_delta
+        if tz_delta:
+            dt_value += tz_delta
+        return dt_value
+
+    def encode_value(self, value) -> bytes:
+        if value.tzinfo:
+            value = value.astimezone(timezone.utc)
+        if value.microsecond == 0:
+            res = value.strftime("%Y%m%d%H%M%SZ")
+        else:
+            res = value.strftime("%Y%m%d%H%M%S.%fZ")
+        return res.encode('utf-8')
+
+
+class ASN1UTCTime(ASN1DataType):
+    """UTC时间
+
+    X.680 47 Universal Time
+    X.690 11.8 UTCTime
+    """
+    def __init__(self, length: Length = None, value: datetime = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    DATETIME_PATTERN = re.compile(f'^{_YEAR_U}{_MONTH}{_DAY}{_HOUR}{_MINUTE}{_SECOND}?{_TIMEZONE}$')
+
+    @classmethod
+    def tag(cls) -> Tag:
+        return TAG_UTCTime
+
+    @classmethod
+    def tag_name(cls) -> str:
+        return 'UTCTime'
+
+    def decode_value(self, octets: bytes, der: bool):
+        dt_str = octets.decode('utf-8')
+        m = ASN1UTCTime.DATETIME_PATTERN.match(dt_str)
+        if m is None:
+            raise ValueError(f"无法识别的UTC时间（Generalized Time）: {dt_str}")
+
+        year, month, day, hour, minute, second, tz, tzsign, tzhour, tzminute = m.groups()
+
+        if der:
+            if not second:
+                # 11.8.2 The seconds element shall always be present.
+                raise DERIncompatible('UTCTime必须要准确到秒（X.690 11.8.2）')
+            if not tz:
+                # 11.8.1 The encoding shall terminate with "Z", as described in the ITU-T X.680 | ISO/IEC 8824-1
+                # clause on UTCTime
+                raise DERIncompatible('UTCTime必须以Z结尾（X.690 11.8.1）')
+
+        if tz == 'Z':
+            tz_delta = None
+        else:
+            # 11.8.1 The encoding shall terminate with "Z", as described in the ITU-T X.680 | ISO/IEC 8824-1
+            # clause on UTCTime
+            if der:
+                raise DERIncompatible('UTCTime必须以Z结尾（X.690 11.8.1）')
+            tz_delta = timedelta(hours=int(tzhour) if tzhour else 0,
+                                 minutes=int(tzminute) if tzminute else 0) * (1 if tzsign == '-' else -1)
+
+        dr_value = datetime(year=int(2000 + int(year) if int(year) < 70 else 1900 + int(year)),
+                               month=int(month), day=int(day),
+                               hour=int(hour), minute=int(minute),
+                               second=int(second) if second else 0)
+        if tz_delta:
+            dr_value += tz_delta
+        return dr_value
+
+    def encode_value(self, value) -> bytes:
+        if value.tzinfo is not None:
+            value = value.astimezone(timezone.utc)
+        return value.strftime('%y%m%d%H%M%SZ').encode('utf-8')
+
 
 class ASN1Sequence(ASN1DataType):
-    def __init__(self, length: Length = None, value: Sequence[ASN1DataType] = None, value_octets: bytes = None, der: bool = False):
+    def __init__(self, length: Length = None, value: Sequence[ASN1DataType] = None, value_octets: bytes = None,
+                 der: bool = False):
         super().__init__(length, value, value_octets, der)
 
     @classmethod
