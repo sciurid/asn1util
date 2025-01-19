@@ -1,5 +1,5 @@
 from asn1util import *
-from unittest import *
+from unittest import TestCase
 import logging
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)8s %(name)20s %(lineno)04s %(message)s")
@@ -27,18 +27,6 @@ class TLVTestCase(TestCase):
 
         for t, l, v in iter_descendant_tlvs(encoder.data, in_octets=False):
             print(t, l, v.hex())
-
-        # with encoder.construct(b'\x30', True):
-        #     encoder.append_primitive(b'\x01',b'\xff')
-        #     encoder.append_primitive(b'\x02', b'\x00\x01\x02\x03')
-        #     encoder.append_primitive(b'\x13', b'The fox jumps over the lazy dog.')
-        #     with encoder.construct(b'\x30', True):
-        #         encoder.append_primitive(b'\x01', b'\x00')
-        #         encoder.append_primitive(b'\x02', b'\x03\x02\x01\x00')
-        #         encoder.append_primitive(b'\x13', b'Hello, world!')
-
-
-
 
         asn1_print_items(asn1_decode(encoder.data))
 
