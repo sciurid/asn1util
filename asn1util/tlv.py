@@ -227,7 +227,7 @@ class Tag:
             return Tag(bytes(res))
 
     @staticmethod
-    def decode(data: Union[bytes, bytearray, BinaryIO]):
+    def decode(data: Union[bytes, bytearray, BinaryIO]) -> Optional['Tag']:
         """从字节串或者流的头部读取出Tag（常用）
 
         :param data:输入的字节串或流
@@ -282,7 +282,7 @@ class Length:
             self._value = int.from_bytes(self._octets[1:], byteorder='big', signed=False)
 
     @staticmethod
-    def build(length_value: int) -> 'Length':
+    def eval(length_value: int) -> 'Length':
         if length_value is None:
             return Length(bytes([Length.INDEFINITE]))
         if length_value < 0:
@@ -293,7 +293,7 @@ class Length:
         else:
             num_octets = (length_value.bit_length() + 7) // 8
             if num_octets > 127:
-                raise InvalidTLV("长度要求的字节数{0:d}大于127/Number of octets for length value {0:d} is over 127"
+                raise InvalidEncoding("长度要求的字节数{0:d}大于127/Number of octets for length value {0:d} is over 127"
                                  .format(num_octets))
 
             buffer = bytearray([num_octets | 0x80])
@@ -343,8 +343,8 @@ class Length:
             subsequent_len = initial & 0x7f
             subsequent_octets = data.read(subsequent_len)
             if len(subsequent_octets) < subsequent_len:
-                raise InvalidTLV("剩余字节数{0:d}不足长度{1:d}/Insufficient octets {0:d} < {1:d}"
-                                 .format(len(subsequent_octets), subsequent_len))
+                raise InvalidEncoding("剩余字节数{0:d}不足长度{1:d}/Insufficient octets {0:d} < {1:d}"
+                                      .format(len(subsequent_octets), subsequent_len))
             buffer.extend(subsequent_octets)
             return Length(bytes(buffer), der)
 

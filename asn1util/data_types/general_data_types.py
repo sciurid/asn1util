@@ -26,7 +26,7 @@ class ASN1DataType:
                 self._value_octets = value_octets
                 self._value = self.decode_value(value_octets, der)
                 if length is None:
-                    self._length = Length.build(len(value_octets))
+                    self._length = Length.eval(len(value_octets))
                 elif len(value_octets) != length.value:
                     raise ValueError("数值字节串value_octets长度与length不一致")
         else:
@@ -34,7 +34,7 @@ class ASN1DataType:
             if value_octets is None:  # 仅有数值，则通过数值计算字节串（通常应当遵循DER编码规则），常用于编码情况
                 self._value_octets = self.encode_value(value)
                 if length is None:
-                    self._length = Length.build(len(self._value_octets))
+                    self._length = Length.eval(len(self._value_octets))
                 else:
                     if len(self._value_octets) != length.value:
                         raise ValueError("数值value编码出的字节串长度与length不一致")
@@ -112,7 +112,7 @@ class ASN1DataType:
 
 class ASN1GeneralDataType(ASN1DataType):
     """通用的未专门化的ASN.1元素类型"""
-    def __init__(self, tag: Tag, length: Length = None, value: bytes = None, value_octets: bytes = None, der: bool = False):
+    def __init__(self, tag: Tag, length: Length = None, value = None, value_octets: bytes = None, der: bool = False):
         self._tag = tag
         super().__init__(length, value, value_octets, der)
 
@@ -131,7 +131,10 @@ class ASN1GeneralDataType(ASN1DataType):
             return asn1_decode(octets, der)
 
     def encode_value(self, value) -> bytes:
-        return value
+        if self._tag.is_primitive:
+            return value
+        else:
+            return asn1_encode(value)
 
     def __repr__(self):
         if self._tag.is_primitive:

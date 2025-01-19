@@ -298,7 +298,7 @@ class ASN1Null(ASN1DataType):
         assert length is None or length.value == 0
         assert value is None or len(value) == 0
         assert value_octets is None or len(value_octets) == 0
-        super().__init__(Length.build(0), None, b'')
+        super().__init__(Length.eval(0), None, b'')
 
     @property
     def tag(self) -> Tag:
