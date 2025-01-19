@@ -161,7 +161,7 @@ UNIVERSAL_DATA_TYPE_MAP = {}
 EXTENDED_DATA_TYPE_MAP = {}
 
 
-def asn1_decode(data: Union[bytes, bytearray, BinaryIO], der: bool = False) -> List[ASN1DataType]:
+def asn1_decode(data: Union[bytes, bytearray, BinaryIO], der: bool = False, callback=None) -> List[ASN1DataType]:
     res = []
     for t, l, v in iter_tlvs(data, in_octets=False):
         logger.debug('TLV: %s %s %s', t, l, v.hex())
@@ -172,6 +172,8 @@ def asn1_decode(data: Union[bytes, bytearray, BinaryIO], der: bool = False) -> L
         else:
             item = ASN1GeneralDataType(tag=t, length=l, value_octets=v)
         res.append(item)
+        if callback:
+            callback(item)
     return res
 
 

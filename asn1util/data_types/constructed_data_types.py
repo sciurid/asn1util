@@ -40,6 +40,9 @@ class ASN1Set(ASN1DataType):
     def tag_name(self) -> str:
         return 'Set'
 
+    def __repr__(self):
+        return self._repr_common_format(meta_expr=f'(len={self._length.value},items={len(self._value)})', value_expr='')
+
     def decode_value(self, octets: bytes, der: bool):
         return asn1_decode(octets, der)
 
