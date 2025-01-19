@@ -115,14 +115,14 @@ class ASN1Integer(ASN1DataType):
         return 'Integer'
 
     def decode_value(self, octets: bytes, der: bool) -> int:
-
-        if len(octets) > 1 \
-            and ((octets[0] == 0x00 and octets[1] & 0x80 == 0) or (octets[0] == 0xff and octets[1] & 0x80 == 1)):
+        if (len(octets) > 1
+                and ((octets[0] == 0x00 and octets[1] & 0x80 == 0) or (octets[0] == 0xff and octets[1] & 0x80 == 1))):
             raise InvalidEncoding("Integer数值编码首字节不能全0或全1")
         return int.from_bytes(octets, byteorder='big', signed=True)
 
     def encode_value(self, value: int) -> bytes:
         return signed_int_to_bytes(value)
+
 
 class ASN1Enumerated(ASN1Integer):
     """X.690 8.4 Enumerated"""

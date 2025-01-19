@@ -1,93 +1,62 @@
-# ASN.1编解码库（Python实现）
+# ASN.1编解码工具（asn1util）
 
-遵循X.680/690/696规定，实现常用元素类型的ASN.1的BER/CER/DER解码和DER编码。
+根据X.680/690/696规定，实现ASN.1的编解码和部分数据类型处理的纯Pyhon库。
 
-## 编码功能 Encoder (encoder.py)
+- BER解码
+- DER解码编码
+- 部分通用类（Universal Class）数据类型格式处理
 
-```
-from asn1util import *
+## 介绍
 
-encoder = Encoder()
-with encoder.construct(TagNumber.Sequence):
-    encoder.append_primitive(TagNumber.Integer, value=20)
-    encoder.append_primitive(TagNumber.Real, value=Decimal('123.456'))
-    encoder.append_primitive(TagNumber.Real, value=10.625)
-    encoder.append_primitive(TagNumber.OctetString, value=bytes.fromhex('01 03 07') * 50)
-    encoder.append_primitive(TagNumber.BitString, value=0xf0f0, bit_length=20)
-    encoder.append_primitive(TagNumber.Null, value=None)
-    encoder.append_primitive(TagNumber.UTF8String, value='我的世界')
-    encoder.append_primitive(TagNumber.NumericString, value='0123456789 ')
-    encoder.append_primitive(TagNumber.PrintableString, value='aesWithSha256')
-    encoder.append_primitive(TagNumber.ObjectIdentifier, value='1.2.840.113549')
+抽象语法标记（版本1）ASN.1 (Abstract Syntax Notation One)是由国际电信联盟（ITU）下属的
+电信和信息通信技术标准化部门（ITU-T）推荐的用户表示信息数据语法的编码格式。
 
-    with encoder.construct(TagNumber.Sequence):
-        tz = timezone('Asia/Shanghai')
-        dt = tz.localize(datetime.now())
-        encoder.append_primitive(TagNumber.GeneralizedTime, value=dt)
-        encoder.append_primitive(TagNumber.UTCTime, value=dt)
-        encoder.append_primitive(TagNumber.GeneralizedTime, raw='202305032300.1+0800'.encode('utf-8'))
+ASN.1格式定义多种基本的数据元素类型和结构类型，以及基本编码规则（Basic Encoding Rule, BER）、
+规范编码规则（Canonical Encoding Rule, CER）和区分编码规则（Distinguished Encoding Rule, DER）
+三种编码规则。其中BER规则最为宽松，典型应用如在智能卡领域中；DER规则最为严格，可以确保编码的一致性，
+典型应用在数字证书等密码学相关领域。
 
-return encoder.data
-```
+### 主要模块和相应功能
 
-参见test包中的test_tlvs.py。
+- asn1util.tlv
+  - Tag和Length的定义，实现了编码语法规则
+- asn1util.codec
+  - 基于ASN.1编码规则的TLV对象和字节串/流的编解码
+- asn1util.exceptions
+  - 抛出的异常
+- asn1util.util
+  - 处理数据的工具
+- asn1util.data_types.general_data_types
+  - ASN.1元素的基本类型定义：ASN1DataType/ASN1GeneralDataType
+  - 基于ASN.1编码规则的ASN.1元素和字节串/流的编解码
+- asn1util.data_types.primitive_data_types
+  - ASN.1通用类（Universal Class）的基本类型（Primitive Type)元素定义
+- asn1util.data_types.constructed_data_types
+  - ASN.1通用类（Universal Class）的基本类型（Constructed Type)元素定义
+- asn1util.data_types.real
+  - ASN.1实数类型（ASN1Real）的处理方法
 
-## 解码功能 Decoder (decoder.py)
+## 使用
 
-### 采用遍历方式
-```
-from asn1util import *
-
-with open('sm2.rca.der', 'rb') as cert:
-    for token in iter(Decoder(cert)):
-        pass  # 对token进行操作
-```
-
-### 采用Observer模式
+### 下载和安装
 
 ```
-from asn1util import *
-class PrettyPrintObserver(TokenObserver):
-    def __init__(self, file=None):
-        self._file = file
-        print(f'{"T-Off":>8s}{"L-Off":>8s}{"V-Off":>8s}  {"Tag":40s}{"Length":>6s}  {"Value":<s}',
-              file=self._file if self._file else sys.stdout)
-
-    """美观打印ASN.1数据的Observer类"""
-    def on_event(self, event: str, token: Token, stack: list):
-        super().on_event(event, token, stack)
-        if event == 'begin' and token.tag.is_primitive:
-            return
-        if event == 'end' and not token.tag.is_primitive:
-            return
-
-        to, lo, vo = token.offsets
-        ts = f'{"  " * len(stack)}{str(token.tag)}'
-        ls = str(token.length)
-        vs = token_value_to_str(token)
-
-        print(f'{to:>8d}{lo:>8d}{vo:>8d}  {ts:40s}{ls:>6s}  {vs:<s}',
-              file=self._file if self._file else sys.stdout)
-
-
-def pretty_print(decoder: Decoder, file = None):
-    """通过PrettyPrintObserver类打印ASN.1格式数据"""
-    decoder.reset()
-    decoder.register_observer(PrettyPrintObserver())
-
-    for token in iter(decoder):
-        pass
+git clone https://github.com/sciurid/asn1util.git
+pip install -e asn1util
 ```
 
-参见asn1util包中decoder.py中的PrettyPrintObserver类和pretty_print函数。
+或者
 
-## 主要功能
+```
+git clone https://gitee.com/LanceChen/asn1.git
+pip install -e asn1
+```
 
-* tlv.py:       定义了BER-TLV中的Tag，Length，Value
-* encoding.py:  定义了较简单的数值和字符串
-* real.py:      定义了ASN.1中实数
-* oid.py:       定义了Object Identifier
-* oid_info.py:  辅助类，用于在线查询Object Identifier的描述
-* util.py:      若干辅助函数
-* encoder.py:   编码器
-* decoder.py:   解码器
+
+
+## 主要参考资料
+
+- X.690: Information technology – ASN.1 encoding rules: Specification of Basic Encoding Rules (BER), 
+Canonical Encoding Rules (CER) and Distinguished Encoding Rules (DER)
+- X.680: Information technology – Abstract Syntax Notation One (ASN.1): Specification of basic 
+notation
