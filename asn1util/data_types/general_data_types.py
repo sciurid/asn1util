@@ -1,5 +1,7 @@
+import sys
+
 from asn1util.codec import *
-from typing import List, Sequence
+from typing import List, Sequence, Generator
 
 class ASN1DataType:
     """表示各种数据格式的基类
@@ -163,3 +165,12 @@ def asn1_encode(data: Union[ASN1DataType, Sequence[ASN1DataType], Generator[ASN1
         for item in data:
             buffer.extend(item.octets)
         return bytes(buffer)
+
+
+def asn1_print_items(items, indent=0, file=sys.stdout):
+    for item in items:
+        if item.tag.is_primitive:
+            print('{}{}'.format('    ' * indent, item), file=file)
+        else:
+            print('{}{}'.format('    ' * indent, item), file=file)
+            asn1_print_items(item.value, indent + 1)
