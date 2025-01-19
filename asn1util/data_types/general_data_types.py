@@ -6,10 +6,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class ASN1DataType:
     """表示各种数据格式的基类
     """
-    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
+    def __init__(self, value=None, length: Length = None, value_octets: bytes = None, der: bool = False):
         """通过标签（Tag）、长度（Length）、数值（Value）构建成的ASN.1数据对象
 
         :param length: ASN.1数据对象的长度
@@ -31,7 +32,6 @@ class ASN1DataType:
                 self._length = None
         else:
             self._length = length
-
 
         if value is None:
             if value_octets is None:  # 数值和字节串均为None
@@ -108,7 +108,7 @@ class ASN1DataType:
         return (self.tag == other.tag and self._length == other.length
                 and self.value == other.value)
 
-    def _repr_common_format(self, meta_expr = None, value_expr = None):
+    def _repr_common_format(self, meta_expr=None, value_expr=None):
         # return ('[{}](length={}){}        ({} {} {})'
         #         .format(self.tag_name, self._length.value, value_expr,
         #                 self.tag.octets.hex().upper(), self._length.octets.hex().upper(),
@@ -126,9 +126,9 @@ class ASN1DataType:
 
 class ASN1GeneralDataType(ASN1DataType):
     """通用的未专门化的ASN.1元素类型"""
-    def __init__(self, tag: Tag, length: Length = None, value = None, value_octets: bytes = None, der: bool = False):
+    def __init__(self, tag: Tag, value=None, length: Length = None, value_octets: bytes = None, der: bool = False):
         self._tag = tag
-        super().__init__(length, value, value_octets, der)
+        super().__init__(value, length, value_octets, der)
 
     @property
     def tag(self) -> Tag:
@@ -156,6 +156,7 @@ class ASN1GeneralDataType(ASN1DataType):
         else:
             return self._repr_common_format(meta_expr=f'(len={self._length.value},items={len(self._value)})',
                                             value_expr='')
+
 
 UNIVERSAL_DATA_TYPE_MAP = {}
 EXTENDED_DATA_TYPE_MAP = {}

@@ -6,9 +6,9 @@ TAG_Set = Tag(b'\x31')
 
 
 class ASN1Sequence(ASN1DataType):
-    def __init__(self, length: Length = None, value: Sequence[ASN1DataType] = None, value_octets: bytes = None,
+    def __init__(self, value: Sequence[ASN1DataType] = None, length: Length = None , value_octets: bytes = None,
                  der: bool = False):
-        super().__init__(length, value, value_octets, der)
+        super().__init__(value, length, value_octets, der)
 
     @property
     def tag(self) -> Tag:
@@ -27,10 +27,11 @@ class ASN1Sequence(ASN1DataType):
     def encode_value(self, value) -> bytes:
         return asn1_encode(value)
 
+
 class ASN1Set(ASN1DataType):
 
-    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value=None, length: Length = None , value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     @property
     def tag(self) -> Tag:

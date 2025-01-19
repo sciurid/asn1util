@@ -4,7 +4,8 @@ from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from .general_data_types import *
 from asn1util.data_types.real import (SpecialRealValue, to_decimal_encoding, to_binary_encoding,
-                                      int_to_base2_sne, ieee754_double_to_base2_sne, decimal_to_base2_sne, to_ieee758_double)
+                                      int_to_base2_sne, ieee754_double_to_base2_sne, decimal_to_base2_sne,
+                                      to_ieee758_double)
 from asn1util.exceptions import InvalidEncoding, DERIncompatible, UnsupportedValue
 from asn1util.tlv import Tag, Length
 from asn1util.util import signed_int_to_bytes
@@ -49,11 +50,11 @@ TAG_BMPString = Tag(b'\x1e')
 class ASN1EndOfContent(ASN1DataType):
 
     """X.690 8.1.5 EOC"""
-    def __init__(self, length: Length = None, value: bytes = None, value_octets: bytes = b'', der: bool = False):
+    def __init__(self, value: bytes = None, length: Length = None, value_octets: bytes = b'', der: bool = False):
         assert length is None or length.value == 0
         assert value is None or len(value) == 0
         assert value_octets is None or len(value_octets) == 0
-        super().__init__(length, value, value_octets, der)
+        super().__init__(value, length, value_octets, der)
         if der:
             raise DERIncompatible('DER编码中不出现不确定长度和EOC数据对象')
 
@@ -78,8 +79,8 @@ class ASN1EndOfContent(ASN1DataType):
 
 class ASN1Boolean(ASN1DataType):
     """X.690 8.2 Boolean"""
-    def __init__(self, length: Length = None, value: bool = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: bool = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     @property
     def tag(self) -> Tag:
@@ -103,8 +104,8 @@ class ASN1Boolean(ASN1DataType):
 
 class ASN1Integer(ASN1DataType):
     """X.690 8.3 Integer"""
-    def __init__(self, length: Length = None, value: int = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: int = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     @property
     def tag(self) -> Tag:
@@ -126,8 +127,8 @@ class ASN1Integer(ASN1DataType):
 
 class ASN1Enumerated(ASN1Integer):
     """X.690 8.4 Enumerated"""
-    def __init__(self, length: Length = None, value: int = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: int = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     @property
     def tag(self) -> Tag:
@@ -140,7 +141,7 @@ class ASN1Enumerated(ASN1Integer):
 
 class ASN1Real(ASN1DataType):
     """X.690 8.4 Real"""
-    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False,
+    def __init__(self, value=None, length: Length = None, value_octets: bytes = None, der: bool = False,
                  base: Optional[int] = None):
         if base:
             if der and base != 2 and base != 10:
@@ -149,8 +150,7 @@ class ASN1Real(ASN1DataType):
             elif base not in (2, 8, 16, 10):
                 raise ValueError("实数Real类型仅限底数为2或10")
         self._base = base
-        super().__init__(length, value, value_octets, der)
-
+        super().__init__(value, length, value_octets, der)
 
     @property
     def tag(self) -> Tag:
@@ -200,7 +200,7 @@ class ASN1Real(ASN1DataType):
                 e = e * 3 + f
             elif b6b5 == 0x20:
                 base = 16
-                e = e * 4+ f
+                e = e * 4 + f
             else:
                 raise InvalidEncoding("二进制底数保留值{}".format(hex(leading)))
             if self._base:
@@ -239,9 +239,9 @@ class ASN1Real(ASN1DataType):
 
 
 class ASN1BitString(ASN1DataType):
-    def __init__(self, length: Length = None, value: Tuple[bytes, int] = None, value_octets: bytes = None,
+    def __init__(self, value: Tuple[bytes, int] = None, length: Length = None, value_octets: bytes = None,
                  der: bool = False):
-        super().__init__(length, value, value_octets, der)
+        super().__init__(value, length, value_octets, der)
 
     @property
     def tag_name(self) -> str:
@@ -273,8 +273,8 @@ class ASN1BitString(ASN1DataType):
 
 
 class ASN1OctetString(ASN1DataType):
-    def __init__(self, length: Length = None, value: bytes = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: bytes = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     @property
     def tag(self) -> Tag:
@@ -295,11 +295,11 @@ class ASN1OctetString(ASN1DataType):
 
 
 class ASN1Null(ASN1DataType):
-    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
+    def __init__(self, value=None, length: Length = None, value_octets: bytes = None, der: bool = False):
         assert length is None or length.value == 0
         assert value is None or len(value) == 0
         assert value_octets is None or len(value_octets) == 0
-        super().__init__(Length.eval(0), None, b'')
+        super().__init__(length=Length.eval(0), value_octets=b'')
 
     @property
     def tag(self) -> Tag:
@@ -330,9 +330,9 @@ class ASN1ObjectIdentifier(ASN1DataType):
     令OID的第一个元素为X，第二个元素为Y，则第一个子id为 (X * 40) + Y。
     其他的子元素依次与后续的子id编码相同。
     """
-    def __init__(self, length: Length = None, value: Union[str, Sequence[int]] = None,
+    def __init__(self, value: Union[str, Sequence[int]] = None, length: Length = None,
                  value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+        super().__init__(value, length, value_octets, der)
 
     @property
     def tag(self) -> Tag:
@@ -395,8 +395,8 @@ class ASN1UnicodeString(ASN1DataType):
 
     X690 8.23 Restricted Character String
     """
-    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: str = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     @classmethod
     def encoding(cls) -> str:
@@ -411,9 +411,10 @@ class ASN1UnicodeString(ASN1DataType):
 
 
 class ASN1UTF8String(ASN1UnicodeString):
-    """UTF-8编码的限定类型字符串，X 690 8.23.10"""
-    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    """UTF-8 编码的限定类型字符串，X 690 8.23.10"""
+    def __init__(self, value=None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
+
     @property
     def tag(self) -> Tag:
         return TAG_UTF8String
@@ -435,8 +436,8 @@ class ASN1UniversalString(ASN1UnicodeString):
     using the 4-octet canonical form (see 13.2 of ISO/IEC 10646). Signatures shall not be used. Control
     functions may be used provided they satisfy the restrictions imposed by 8.23.9.
     """
-    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: str = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     @classmethod
     def encoding(cls) -> str:
@@ -459,8 +460,8 @@ class ASN1BMPString(ASN1UnicodeString):
     the 2-octet BMP form (see 13.1 of ISO/IEC 10646). Signatures shall not be used. Control functions may
     be used provided they satisfy the restrictions imposed by 8.23.9.
     """
-    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: str = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     @classmethod
     def encoding(cls) -> str:
@@ -486,8 +487,8 @@ class ASN1ISO2022String(ASN1DataType):
     ISO/IEC 2022 Information technology—Character code structure and extension techniques
     https://en.wikipedia.org/wiki/ISO/IEC_2022#Code_structure
     """
-    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: str = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     @classmethod
     def restrict(cls, value) -> bool:
@@ -510,8 +511,8 @@ class ASN1NumericString(ASN1ISO2022String):
     X.680 41 Table 8
     X.680 41.2 Table 9
     """
-    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: str = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     PATTERN: re.Pattern = re.compile(r'^[0-9 ]*$')
     @classmethod
@@ -533,8 +534,8 @@ class ASN1PrintableString(ASN1ISO2022String):
     X.680 41 Table 8
     X.680 41.4 Table 10
     """
-    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: str = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     PATTERN: re.Pattern = re.compile(r'^[0-9A-Za-z \'()+,-.\/:=?]*$')
     @classmethod
@@ -556,8 +557,8 @@ class ASN1VisibleString(ASN1ISO2022String):
     ISO/IEC 646 is a set of ISO/IEC standards, described as Information technology — ISO 7-bit coded character
     set for information interchange, and developed in cooperation with ASCII at least since 1964.
     """
-    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: str = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     PATTERN: re.Pattern = re.compile(r'^[\x00-\x7f]*$')
     @classmethod
@@ -580,8 +581,8 @@ class ASN1GraphicString(ASN1VisibleString):
     X.680 41 Table 8
     X.690 8.23.5.2 Table 3
     """
-    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: str = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     @property
     def tag(self) -> Tag:
@@ -597,8 +598,8 @@ class ASN1ObjectDescriptor(ASN1GraphicString):
     X.680 48 The object descriptor type
     """
 
-    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: str = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     @property
     def tag(self) -> Tag:
@@ -616,8 +617,8 @@ class ASN1GeneralString(ASN1ISO2022String):
     X.680 41 Table 8
     X.690 8.23.5.2 Table 3
     """
-    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: str = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     @classmethod
     def restrict(cls, value) -> bool:
@@ -639,8 +640,8 @@ class ASN1IA5String(ASN1GeneralString):
     X.680 41 Table 8
     X.690 8.23.5.2 Table 3
     """
-    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: str = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     @property
     def tag(self) -> Tag:
@@ -666,8 +667,8 @@ class ASN1GeneralizedTime(ASN1DataType):
     X.680 46 Generalized Time
     X.690 11.7 GeneralizedTime
     """
-    def __init__(self, length: Length = None, value: datetime = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: datetime = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     DATETIME_PATTERN = re.compile(f'^{_YEAR_G}{_MONTH}{_DAY}{_HOUR}{_MINUTE}?{_SECOND}?{_FRACTION}?{_TIMEZONE}?$')
 
@@ -743,8 +744,8 @@ class ASN1UTCTime(ASN1DataType):
     X.680 47 Universal Time
     X.690 11.8 UTCTime
     """
-    def __init__(self, length: Length = None, value: datetime = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
+    def __init__(self, value: datetime = None, length: Length = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(value, length, value_octets, der)
 
     DATETIME_PATTERN = re.compile(f'^{_YEAR_U}{_MONTH}{_DAY}{_HOUR}{_MINUTE}{_SECOND}?{_TIMEZONE}$')
 
