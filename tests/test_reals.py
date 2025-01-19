@@ -4,7 +4,7 @@ from decimal import *
 import random
 
 import logging
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)8s %(name)20s %(lineno)04s %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)8s %(name)20s %(lineno)04s %(message)s")
 logger = logging.getLogger(__name__)
 
 

@@ -1,5 +1,6 @@
 from unittest import TestCase
 import logging
+import os
 from asn1util import *
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)8s %(name)20s %(lineno)04s %(message)s")
@@ -8,8 +9,9 @@ logger = logging.getLogger(__name__)
 
 class X509TestCase(TestCase):
     def test_certificates(self):
+        location = os.path.abspath(os.path.join(__file__, os.pardir))
         for fn in ('chenqiang.me.cer', 'sm2.rca.der', 'sm2.oca.der'):
-            self.on_certificate(fn)
+            self.on_certificate(os.path.join(location, fn))
 
 
     def on_certificate(self, filepath):

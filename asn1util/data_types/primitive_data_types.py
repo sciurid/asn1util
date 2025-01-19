@@ -49,7 +49,7 @@ TAG_BMPString = Tag(b'\x1e')
 class ASN1EndOfContent(ASN1DataType):
 
     """X.690 8.1.5 EOC"""
-    def __init__(self, length: Length = None, value: bytes = None, value_octets: bytes = None, der: bool = False):
+    def __init__(self, length: Length = None, value: bytes = None, value_octets: bytes = b'', der: bool = False):
         assert length is None or length.value == 0
         assert value is None or len(value) == 0
         assert value_octets is None or len(value_octets) == 0
@@ -142,7 +142,6 @@ class ASN1Real(ASN1DataType):
     """X.690 8.4 Real"""
     def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False,
                  base: Optional[int] = None):
-        super().__init__(length, value, value_octets, der)
         if base:
             if der and base != 2 and base != 10:
                 if der:
@@ -150,6 +149,8 @@ class ASN1Real(ASN1DataType):
             elif base not in (2, 8, 16, 10):
                 raise ValueError("实数Real类型仅限底数为2或10")
         self._base = base
+        super().__init__(length, value, value_octets, der)
+
 
     @property
     def tag(self) -> Tag:
