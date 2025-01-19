@@ -6,7 +6,7 @@
 - DER解码编码
 - 部分通用类（Universal Class）数据类型格式处理
 
-# 介绍
+## 介绍
 
 抽象语法标记（版本1）ASN.1 (Abstract Syntax Notation One)是由国际电信联盟（ITU）下属的
 电信和信息通信技术标准化部门（ITU-T）推荐的用户表示信息数据语法的编码格式。
@@ -16,7 +16,7 @@ ASN.1格式定义多种基本的数据元素类型和结构类型，以及基本
 三种编码规则。其中BER规则最为宽松，典型应用如在智能卡领域中；DER规则最为严格，可以确保编码的一致性，
 典型应用在数字证书等密码学相关领域。
 
-## 主要模块和相应功能
+### 主要模块和相应功能
 
 - asn1util.tlv
   - Tag和Length的定义，实现了编码语法规则
@@ -36,7 +36,7 @@ ASN.1格式定义多种基本的数据元素类型和结构类型，以及基本
 - asn1util.data_types.real
   - ASN.1实数类型（ASN1Real）的处理方法
 
-# 下载和安装
+## 下载和安装
 
 ```
 git clone https://github.com/sciurid/asn1util.git
@@ -50,9 +50,9 @@ git clone https://gitee.com/LanceChen/asn1.git
 pip install -e asn1
 ```
 
-# 快速使用
+## 快速使用
 
-## ASN.1基本数据类型编码
+### ASN.1基本数据类型编码
 
 ```
 a = ASN1Integer(1234567890)  # 整数
@@ -92,10 +92,9 @@ print(n, n.octets)
 
 ```
 
-## 构造ASN.1结构
+### ASN.1组合数据类型编码
 
-### 层次构造
-
+#### 层次构造
 
 使用StreamEncoder类来进行各种嵌套层次的构建。
 
@@ -117,7 +116,7 @@ for t, l, v in iter_descendant_tlvs(encoder.data, in_octets=False):
 asn1_print_items(asn1_decode(encoder.data))
 ```
 
-### 支持不定长（Indefinite Length）的组合元素构造
+#### 支持不定长（Indefinite Length）
 
 注：不定长组合元素不符合DER规范，较为少见。
 
@@ -139,9 +138,9 @@ for t, l, v in iter_descendant_tlvs(encoder.data, in_octets=False):
 asn1_print_items(asn1_decode(encoder.data))
 ```
 
-## ASN.1解码
+### ASN.1解码
 
-### 简单解码
+#### 简单解码
 
 - read_next_tlv 从字符流中读取下一个TLV
 - iter_tlvs 遍历当前层次的TLV，组合元素视为本层的单个TLV
@@ -174,12 +173,12 @@ self.assertIsNone(l)
 self.assertIsNone(v)
 ```
 
-# 后续开发计划
+## 后续开发计划
 
 - 扩充常见的ASN.1类型
 - 增加默认类型的StreamEncoder类或者方法
 
-# 主要参考资料
+## 主要参考资料
 
 - X.690: Information technology – ASN.1 encoding rules: Specification of Basic Encoding Rules (BER), 
 Canonical Encoding Rules (CER) and Distinguished Encoding Rules (DER)
