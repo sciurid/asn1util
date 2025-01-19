@@ -63,7 +63,7 @@ class ASN1EndOfContent(ASN1DataType):
 
     @property
     def tag_name(self) -> str:
-        return 'End-of-content'
+        return 'EndOfContent'
 
     def decode_value(self, octets: bytes, der: bool):
         if octets != b'':

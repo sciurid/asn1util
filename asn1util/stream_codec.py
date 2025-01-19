@@ -234,18 +234,17 @@ class StreamEncoder:
     def begin_constructed(self, t: Union[bytes, Tag], indefinite_length: bool = False):
         """开始构造组合类型元素
         """
-        if isinstance(t, bytes):
-            t = Tag(t)
-        if t.is_primitive:
+        tag = Tag(t) if isinstance(t, bytes) else t
+        if tag.is_primitive:
             raise ValueError("基本元素不应调用组合元素的构造函数")
 
         if indefinite_length:
-            self._stream.write(Tag(t.octets).octets)
+            self._stream.write(Tag(tag.octets).octets)
             self._stream.write(bytes([Length.INDEFINITE]))
         else:
-            self._stream.write(Tag(t.octets).octets)
+            self._stream.write(Tag(tag.octets).octets)
         # 将组合元素标签、是否不定长、值域缓冲区（如果定长）压入
-        self._stack.append((t, None if indefinite_length else bytearray()))
+        self._stack.append((tag, None if indefinite_length else bytearray()))
 
     def end_constructed(self):
         """结束构造Constructed类型元素。

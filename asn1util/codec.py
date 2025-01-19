@@ -29,30 +29,33 @@ def read_next_tlv(data: Union[bytes, bytearray, BinaryIO], return_octets: bool =
     if l is None:
         raise InvalidEncoding(f'Tag存在但Length数据不存在：{t}')
 
-    if not l.is_definite:  # 不定长元素，仅在BER中出现，在DER中不允许
+    if l.is_definite:
+        # 定长元素
+        v = istream.read(l.value)
+        if v is None:
+            raise ASN1Exception(f'Tag和Length存在但Value数据不存在：{t}({l})')
+        elif len(v) < l.value:
+            raise ASN1Exception(f'Value数据长度不足：{t}({l}) vs {len(v)}')
+
+        if return_octets:
+            return t.octets, l.octets, v
+        else:
+            return t, l, v
+    else:  # 不定长元素，仅在BER中出现，在DER中不允许
         buffer = bytearray()
         while True:
-            t, l, v = read_next_tlv(istream, return_octets=True)
-            if t is None:
+            it, il, iv = read_next_tlv(istream, return_octets=True)
+            if it is None:
                 raise InvalidEncoding('不定长数据未遇到EOC终止元素', bytes(buffer))
-            buffer.extend(t)
-            buffer.extend(l)
-            buffer.extend(v)
-            if t == b'\x00':  # 只有遇到EOC时才会停止
+            buffer.extend(it)
+            buffer.extend(il)
+            buffer.extend(iv)
+            if it == b'\x00':  # 只有遇到EOC时才会停止
                 break
-        return t, l, bytes(buffer)
-
-    # 定长元素
-    v = istream.read(l.value)
-    if v is None:
-        raise ASN1Exception(f'Tag和Length存在但Value数据不存在：{t}({l})')
-    elif len(v) < l.value:
-        raise ASN1Exception(f'Value数据长度不足：{t}({l}) vs {len(v)}')
-
-    if return_octets:
-        return t.octets, l.octets, v
-    else:
-        return t, l, v
+        if return_octets:
+            return t.octets, l.octets, bytes(buffer)
+        else:
+            return t, l, bytes(buffer)
 
 
 def iter_tlvs(data: Union[bytes, bytearray, BinaryIO], in_octets: bool = True):

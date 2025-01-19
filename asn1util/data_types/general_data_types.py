@@ -2,6 +2,9 @@ import sys
 
 from asn1util.codec import *
 from typing import List, Sequence, Generator
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ASN1DataType:
     """表示各种数据格式的基类
@@ -16,8 +19,19 @@ class ASN1DataType:
 
         构建过程中将检查参数一致性。
         """
+        logger.debug(f'{self.__class__} {length} {value} {value_octets}')
         self._der = der
-        self._length = length
+
+        if length and not length.is_definite:
+            if self.tag.is_primitive:
+                raise InvalidEncoding("基本类型长度Length为不定长")
+            elif self._der:
+                raise DERIncompatible("DER编码中长度Length必须为定长")
+            else:
+                self._length = None
+        else:
+            self._length = length
+
 
         if value is None:
             if value_octets is None:  # 数值和字节串均为None
@@ -25,9 +39,9 @@ class ASN1DataType:
             else:   # 仅有数值字节串，则保留字节串并计算数值，常用于解码情况
                 self._value_octets = value_octets
                 self._value = self.decode_value(value_octets, der)
-                if length is None:
+                if self._length is None:
                     self._length = Length.eval(len(value_octets))
-                elif len(value_octets) != length.value:
+                elif len(value_octets) != self._length.value:
                     raise ValueError("数值字节串value_octets长度与length不一致")
         else:
             self._value = value
@@ -36,7 +50,7 @@ class ASN1DataType:
                 if length is None:
                     self._length = Length.eval(len(self._value_octets))
                 else:
-                    if len(self._value_octets) != length.value:
+                    if len(self._value_octets) != self._length.value:
                         raise ValueError("数值value编码出的字节串长度与length不一致")
             else:   # 两者都有时，则保留字节串并以此计算数值（考虑到非DER等编码不唯一情况），并与数值核对
                 self._value_octets = value_octets
@@ -150,6 +164,7 @@ EXTENDED_DATA_TYPE_MAP = {}
 def asn1_decode(data: Union[bytes, bytearray, BinaryIO], der: bool = False) -> List[ASN1DataType]:
     res = []
     for t, l, v in iter_tlvs(data, in_octets=False):
+        logger.debug('TLV: %s %s %s', t, l, v.hex())
         if t.octets in UNIVERSAL_DATA_TYPE_MAP:
             item = UNIVERSAL_DATA_TYPE_MAP[t.octets](length=l, value_octets=v, der=der)
         elif t.octets in EXTENDED_DATA_TYPE_MAP:
