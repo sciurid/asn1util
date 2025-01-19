@@ -177,7 +177,7 @@ def asn1_decode(data: Union[bytes, bytearray, BinaryIO], der: bool = False, call
     return res
 
 
-def asn1_encode(data: Union[ASN1DataType, Sequence[ASN1DataType], Generator[ASN1DataType]]) -> bytes:
+def asn1_encode(data: Union[ASN1DataType, Sequence[ASN1DataType], Generator[ASN1DataType, None, None]]) -> bytes:
     if isinstance(data, ASN1DataType):
         return data.octets
     if isinstance(data, Sequence) or isinstance(data, Generator):
