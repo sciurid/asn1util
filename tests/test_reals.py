@@ -1,5 +1,5 @@
 from asn1util import *
-from unittest import TestCase, skip
+from unittest import TestCase
 from decimal import *
 import random
 

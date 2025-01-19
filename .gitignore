@@ -1,6 +1,5 @@
 asn1util.egg-info/
-asn1util/__pycache__/
-tests/__pycache__/
+**/__pycache__/
 build/
 dist/
 .idea/**
