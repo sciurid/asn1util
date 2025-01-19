@@ -1,4 +1,4 @@
-from unittest import TestCase
+from unittest import TestCase, skip
 import logging
 import os
 from asn1util import *
@@ -11,10 +11,10 @@ class X509TestCase(TestCase):
     def test_certificates(self):
         location = os.path.abspath(os.path.join(__file__, os.pardir))
         for fn in ('chenqiang.me.cer', 'sm2.rca.der', 'sm2.oca.der'):
-            self.on_certificate(os.path.join(location, fn))
+            self.check_certificate(os.path.join(location, fn))
 
 
-    def on_certificate(self, filepath):
+    def check_certificate(self, filepath):
         print("-" * 20 + filepath + '-' * 20)
         with open(filepath, 'rb') as cert:
             data = cert.read()
@@ -23,6 +23,7 @@ class X509TestCase(TestCase):
         self.check_der_compatible(data)
         item_sequence = asn1_decode(data)[0]
         self.assertEqual(data, item_sequence.octets)
+
 
     def check_der_compatible(self, cert):
         for t, l, v in iter_descendant_tlvs(cert, in_octets=True):  # 从ASN.1数据中依次取出元素
