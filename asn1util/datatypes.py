@@ -1,5 +1,5 @@
 import re
-from typing import Union, Tuple, Sequence
+from typing import Union, Tuple, Sequence, Optional, List, BinaryIO, Generator
 import struct
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
@@ -8,6 +8,7 @@ from .real import (SpecialRealValue, to_decimal_encoding, to_binary_encoding,
                    int_to_base2_sne, ieee754_double_to_base2_sne, decimal_to_base2_sne, to_ieee758_double)
 from .exceptions import InvalidEncoding, DERIncompatible, UnsupportedValue
 from .tlv import Tag, Length
+from .codec import iter_tlvs
 from .util import signed_int_to_bytes
 
 # X.680 Table 1 (P14)
@@ -90,13 +91,13 @@ class ASN1DataType:
                 if value != decoded:
                     raise ValueError("数值value或数值字节串value_octets不一致")
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         """返回数据对象标签"""
         raise NotImplementedError()
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         """返回数据对象名称"""
         raise NotImplementedError()
 
@@ -127,36 +128,66 @@ class ASN1DataType:
 
     @property
     def octets(self):
-        buffer = bytearray(self.tag().octets)
+        buffer = bytearray(self.tag.octets)
         buffer.extend(self._length.octets)
         buffer.extend(self._value_octets)
         return bytes(buffer)
 
     def __eq__(self, other):
-        return (self.tag() == other.tag() and self._length == other._length
+        return (self.tag == other.tag and self._length == other._length
                 and self.value == other.value)
 
     def __repr__(self):
         return ('[ASN.1 {}]{} ({} {} {})'
-                .format(self.tag_name(), self.value,
-                        self.tag().octets.hex().upper(), self._length.octets.hex().upper(),
+                .format(self.tag_name, self.value,
+                        self.tag.octets.hex().upper(), self._length.octets.hex().upper(),
+                        self._value_octets.hex().upper()))
+
+
+class ASN1GeneralDataType(ASN1DataType):
+    """通用的未专门化的ASN.1元素类型"""
+    def __init__(self, tag: Tag, length: Length = None, value: bytes = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+        self._tag = tag
+
+    @property
+    def tag(self) -> Tag:
+        return self._tag
+
+    @property
+    def tag_name(self) -> str:
+        return f'General[{repr(self._tag)}]'
+
+    def decode_value(self, octets: bytes, der: bool) -> bytes:
+        return octets
+
+    def encode_value(self, value) -> bytes:
+        return value
+
+    def __repr__(self):
+        return ('[ASN.1 {}]{} ({} {} {})'
+                .format(self.tag_name, self.value.hex().upper(),
+                        self.tag.octets.hex().upper(), self._length.octets.hex().upper(),
                         self._value_octets.hex().upper()))
 
 
 class ASN1EndOfContent(ASN1DataType):
 
     """X.690 8.1.5 EOC"""
-    def __init__(self, der: bool = False):
-        super().__init__(Length.build(0), None, b'')
+    def __init__(self, length: Length = None, value: bytes = None, value_octets: bytes = None, der: bool = False):
+        assert length is None or length.value == 0
+        assert value is None or len(value) == 0
+        assert value_octets is None or len(value_octets) == 0
+        super().__init__(length, value, value_octets, der)
         if der:
             raise DERIncompatible('DER编码中不出现不确定长度和EOC数据对象')
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_EOC
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'End-of-content'
 
     def decode_value(self, octets: bytes, der: bool):
@@ -175,12 +206,12 @@ class ASN1Boolean(ASN1DataType):
     def __init__(self, length: Length = None, value: bool = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_Boolean
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'Boolean'
 
     def decode_value(self, octets: bytes, der: bool) -> bool:
@@ -200,12 +231,12 @@ class ASN1Integer(ASN1DataType):
     def __init__(self, length: Length = None, value: int = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_Integer
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'Integer'
 
     def decode_value(self, octets: bytes, der: bool) -> int:
@@ -223,32 +254,34 @@ class ASN1Enumerated(ASN1Integer):
     def __init__(self, length: Length = None, value: int = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_Enumerated
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'Enumerated'
 
 
 class ASN1Real(ASN1DataType):
     """X.690 8.4 Real"""
-    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False, base: int = 2):
-        self._base = base
+    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False,
+                 base: Optional[int] = None):
         super().__init__(length, value, value_octets, der)
-        if der and base != 2 and base != 10:
-            if der:
-                raise DERIncompatible("DER编码实数Real类型仅限底数为2或10")
-        elif base not in (2, 8, 16, 10):
-            raise ValueError("实数Real类型仅限底数为2或10")
+        if base:
+            if der and base != 2 and base != 10:
+                if der:
+                    raise DERIncompatible("DER编码实数Real类型仅限底数为2或10")
+            elif base not in (2, 8, 16, 10):
+                raise ValueError("实数Real类型仅限底数为2或10")
+        self._base = base
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_Real
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'Real'
 
     def decode_value(self, octets: bytes, der: bool) -> Union[float, Decimal, SpecialRealValue]:
@@ -294,8 +327,11 @@ class ASN1Real(ASN1DataType):
                 e = e * 4+ f
             else:
                 raise InvalidEncoding("二进制底数保留值{}".format(hex(leading)))
-            if base != self._base:
-                raise InvalidEncoding("二进制底数不一致{} != {:d}".format(hex(leading), self._base))
+            if self._base:
+                if base != self._base:
+                    raise InvalidEncoding("二进制底数不一致{} != {:d}".format(hex(leading), self._base))
+            else:
+                self._base = base
 
             return to_ieee758_double(s, n, e)
 
@@ -303,6 +339,8 @@ class ASN1Real(ASN1DataType):
         if srv := SpecialRealValue.check_special_value(value):
             return srv.octets
 
+        if not self._base:  # 默认采用不损失精度的幂底数
+            self._base = 2 if isinstance(value, float) else 10
         if self._base == 10:
             if isinstance(value, float):
                 return to_decimal_encoding(Decimal(value))
@@ -329,12 +367,12 @@ class ASN1BitString(ASN1DataType):
                  der: bool = False):
         super().__init__(length, value, value_octets, der)
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'BitString'
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_BitString
 
     def decode_value(self, octets: bytes, der: bool) -> Tuple[bytes, int]:
@@ -358,12 +396,12 @@ class ASN1OctetString(ASN1DataType):
     def __init__(self, length: Length = None, value: bytes = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_OctetString
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'OctetString'
 
     def decode_value(self, octets: bytes, der: bool):
@@ -374,15 +412,18 @@ class ASN1OctetString(ASN1DataType):
 
 
 class ASN1Null(ASN1DataType):
-    def __init__(self, der: bool = False):
+    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
+        assert length is None or length.value == 0
+        assert value is None or len(value) == 0
+        assert value_octets is None or len(value_octets) == 0
         super().__init__(Length.build(0), None, b'')
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_Null
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'Null'
 
     def decode_value(self, octets: bytes, der: bool):
@@ -410,12 +451,12 @@ class ASN1ObjectIdentifier(ASN1DataType):
                  value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_ObjectIdentifier
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'ObjectIdentifier'
 
     @property
@@ -487,12 +528,12 @@ class ASN1UTF8String(ASN1UnicodeString):
     """UTF-8编码的限定类型字符串，X 690 8.23.10"""
     def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_UTF8String
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'UTF8String'
 
     @classmethod
@@ -515,12 +556,12 @@ class ASN1UniversalString(ASN1UnicodeString):
     def encoding(cls) -> str:
         return 'utf-32be'
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_UniversalString
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'UniversalString'
 
 
@@ -539,12 +580,12 @@ class ASN1BMPString(ASN1UnicodeString):
     def encoding(cls) -> str:
         return 'utf-16be'
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_BMPString
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'BMPString'
 
 class ASN1ISO2022String(ASN1DataType):
@@ -591,12 +632,12 @@ class ASN1NumericString(ASN1ISO2022String):
     def restrict(cls, value) -> bool:
         return ASN1NumericString.PATTERN.match(value) is not None
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_NumericString
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'NumericString'
 
 
@@ -614,12 +655,12 @@ class ASN1PrintableString(ASN1ISO2022String):
     def restrict(cls, value) -> bool:
         return ASN1PrintableString.PATTERN.match(value) is not None
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_PrintableString
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'PrintableString'
 
 
@@ -637,12 +678,12 @@ class ASN1VisibleString(ASN1ISO2022String):
     def restrict(cls, value) -> bool:
         return ASN1VisibleString.PATTERN.match(value) is not None
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_VisibleString
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'VisibleString'
 
 
@@ -656,13 +697,31 @@ class ASN1GraphicString(ASN1VisibleString):
     def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_VisibleString
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'VisibleString'
+
+class ASN1ObjectDescriptor(ASN1GraphicString):
+    """等同于ASN1GraphicString
+
+    X.680 48 The object descriptor type
+    """
+
+    def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
+        super().__init__(length, value, value_octets, der)
+
+    @property
+    def tag(self) -> Tag:
+        return TAG_ObjectDescriptor
+
+    @property
+    def tag_name(self) -> str:
+        return 'ObjectDescriptor'
+
 
 class ASN1GeneralString(ASN1ISO2022String):
     """暂时未做限制的ISO/IEC 2022字符串
@@ -678,12 +737,12 @@ class ASN1GeneralString(ASN1ISO2022String):
     def restrict(cls, value) -> bool:
         return True
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_GeneralString
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'GeneralString'
 
 
@@ -697,12 +756,12 @@ class ASN1IA5String(ASN1GeneralString):
     def __init__(self, length: Length = None, value: str = None, value_octets: bytes = None, der: bool = False):
         super().__init__(length, value, value_octets, der)
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_IA5String
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'IA5String'
 
 _YEAR_G = r'(?P<year>[0-9]{4})'
@@ -726,12 +785,12 @@ class ASN1GeneralizedTime(ASN1DataType):
 
     DATETIME_PATTERN = re.compile(f'^{_YEAR_G}{_MONTH}{_DAY}{_HOUR}{_MINUTE}?{_SECOND}?{_FRACTION}?{_TIMEZONE}?$')
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_GeneralizedTime
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'GeneralizedTime'
 
     def decode_value(self, octets: bytes, der: bool):
@@ -803,12 +862,12 @@ class ASN1UTCTime(ASN1DataType):
 
     DATETIME_PATTERN = re.compile(f'^{_YEAR_U}{_MONTH}{_DAY}{_HOUR}{_MINUTE}{_SECOND}?{_TIMEZONE}$')
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_UTCTime
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'UTCTime'
 
     def decode_value(self, octets: bytes, der: bool):
@@ -857,18 +916,65 @@ class ASN1Sequence(ASN1DataType):
                  der: bool = False):
         super().__init__(length, value, value_octets, der)
 
-    @classmethod
-    def tag(cls) -> Tag:
+    @property
+    def tag(self) -> Tag:
         return TAG_Sequence
 
-    @classmethod
-    def tag_name(cls) -> str:
+    @property
+    def tag_name(self) -> str:
         return 'Sequence'
 
-    def decode_value(self, octets: bytes, der: bool):
-        # TODO
-        pass
+    def decode_value(self, octets: bytes, der: bool) -> List[ASN1DataType]:
+        return asn1_decode(octets, der)
 
     def encode_value(self, value) -> bytes:
-        # TODO
-        pass
+        return asn1_encode(value)
+
+DATA_TYPE_MAP = {
+    b'\x00': ASN1EndOfContent,
+    b'\x01': ASN1Boolean,
+    b'\x02': ASN1Integer,
+    b'\x03': ASN1BitString,
+    # b'\x23': ASN1BitString_Constructed,
+    b'\x04': ASN1OctetString,
+    # b'\x24': ASN1OctetString_Constructed,
+    b'\x05': ASN1Null,
+    b'\x06': ASN1ObjectIdentifier,
+    b'\x07': ASN1ObjectDescriptor,
+    b'\x09': ASN1Real,
+    b'\x0A': ASN1Enumerated,
+    b'\x0C': ASN1UTF8String,
+    # b'\x0E': ASN1Time,
+    b'\x30': ASN1Sequence,
+    # b'\x31': ASN1Set,
+    b'\x12': ASN1NumericString,
+    b'\x13': ASN1PrintableString,
+    b'\x16': ASN1IA5String,
+    b'\x17': ASN1UTCTime,
+    b'\x18': ASN1GeneralizedTime,
+    b'\x19': ASN1GraphicString,
+    b'\x1a': ASN1VisibleString,
+    b'\x1b': ASN1GeneralString,
+    b'\x1c': ASN1UniversalString,
+    b'\x1e': ASN1BMPString,
+}
+
+def asn1_decode(data: Union[bytes, bytearray, BinaryIO], der: bool = False) -> List[ASN1DataType]:
+    res = []
+    for t, l, v in iter_tlvs(data, in_octets=False):
+        if t.octets in DATA_TYPE_MAP:
+            item = DATA_TYPE_MAP[t.octets](length=l, value_octets=v, der=der)
+        else:
+            item = ASN1GeneralDataType(tag=t, length=l, value_octets=v)
+        res.append(item)
+    return res
+
+
+def asn1_encode(data: Union[ASN1DataType, Sequence[ASN1DataType], Generator[ASN1DataType]]) -> bytes:
+    if isinstance(data, ASN1DataType):
+        return data.octets
+    if isinstance(data, Sequence) or isinstance(data, Generator):
+        buffer = bytearray()
+        for item in data:
+            buffer.extend(item.octets)
+        return bytes(buffer)

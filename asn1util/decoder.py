@@ -1,19 +1,3 @@
-from asn1util import *
-
-from collections.abc import Iterator
-from dataclasses import dataclass
-from io import BytesIO, StringIO
-from typing import NamedTuple, BinaryIO, Union, List, Tuple, Optional
-import logging
-import sys
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
-log_fmt = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
-log_console = logging.StreamHandler()
-log_console.setFormatter(log_fmt)
-logger.addHandler(log_console)
-
 
 
 
