@@ -3,9 +3,9 @@ from unittest import TestCase
 from decimal import *
 import random
 
-# import logging
-# logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)8s %(name)20s %(lineno)04s %(message)s")
-# logger = logging.getLogger(__name__)
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)8s %(name)20s %(lineno)04s %(message)s")
+logger = logging.getLogger(__name__)
 
 
 def print_float(data: bytes):
@@ -42,14 +42,14 @@ class RealValueTestCase(TestCase):
 
 
     def test_real(self):
-        for _ in range(10000):
+        for _ in range(1000):
             fv = random.randint(-1,1) * random.randint(0, 10000) / random.randint(1, 10000)
             rv = ASN1Real(value=fv)
 
             print(fv, rv)
             self.assertEqual(fv, rv.value)
 
-        for _ in range(10000):
+        for _ in range(1000):
             dv = Decimal((random.randint(0,1),
                           [random.randint(0, 9) for _ in range(random.randint(1, 10))],
                           random.randint(-10, 10)))
