@@ -1,15 +1,13 @@
 import re
-from typing import Union, Tuple, Sequence, Optional, List, BinaryIO, Generator
 import struct
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
-
-from .real import (SpecialRealValue, to_decimal_encoding, to_binary_encoding,
-                   int_to_base2_sne, ieee754_double_to_base2_sne, decimal_to_base2_sne, to_ieee758_double)
-from .exceptions import InvalidEncoding, DERIncompatible, UnsupportedValue
-from .tlv import Tag, Length
-from .codec import iter_tlvs
-from .util import signed_int_to_bytes
+from .general_data_types import *
+from asn1util.data_types.real import (SpecialRealValue, to_decimal_encoding, to_binary_encoding,
+                                      int_to_base2_sne, ieee754_double_to_base2_sne, decimal_to_base2_sne, to_ieee758_double)
+from asn1util.exceptions import InvalidEncoding, DERIncompatible, UnsupportedValue
+from asn1util.tlv import Tag, Length
+from asn1util.util import signed_int_to_bytes
 
 # X.680 Table 1 (P14)
 TAG_EOC = Tag(b'\x00')
@@ -30,8 +28,6 @@ TAG_UTF8String = Tag(b'\x0C')
 # TAG_RelativeObjectIdentifier = Tag(b'\x0D')
 TAG_Time = Tag(b'\x0E')
 # TAG_Reserved = Tag(b'\x0F')
-TAG_Sequence = Tag(b'\x30')
-TAG_Set = Tag(b'\x31')
 TAG_NumericString = Tag(b'\x12')
 TAG_PrintableString = Tag(b'\x13')
 # TAG_TeletexString = Tag(b'\x14')
@@ -48,127 +44,6 @@ TAG_BMPString = Tag(b'\x1e')
 # TAG_TimeOfDay = Tag(b'\x20')
 # TAG_DateTime = Tag(b'\x21')
 # TAG_Duration = Tag(b'\x22')
-
-
-class ASN1DataType:
-    """表示各种数据格式的基类
-    """
-    def __init__(self, length: Length = None, value=None, value_octets: bytes = None, der: bool = False):
-        """通过标签（Tag）、长度（Length）、数值（Value）构建成的ASN.1数据对象
-
-        :param length: ASN.1数据对象的长度
-        :param value: ASN.1数据对象表示的的数值
-        :param value_octets: ASN.1数据对象数值的字节串表示
-        :param der: ASN.1数据对象是否符合DER规范
-
-        构建过程中将检查参数一致性。
-        """
-        self._der = der
-        self._length = length
-
-        if value is None:
-            if value_octets is None:  # 数值和字节串均为None
-                raise ValueError("数值value或数值字节串value_octets均为None")
-            else:   # 仅有数值字节串，则保留字节串并计算数值，常用于解码情况
-                self._value_octets = value_octets
-                self._value = self.decode_value(value_octets, der)
-                if length is None:
-                    self._length = Length.build(len(value_octets))
-                elif len(value_octets) != length.value:
-                    raise ValueError("数值字节串value_octets长度与length不一致")
-        else:
-            self._value = value
-            if value_octets is None:  # 仅有数值，则通过数值计算字节串（通常应当遵循DER编码规则），常用于编码情况
-                self._value_octets = self.encode_value(value)
-                if length is None:
-                    self._length = Length.build(len(self._value_octets))
-                else:
-                    if len(self._value_octets) != length.value:
-                        raise ValueError("数值value编码出的字节串长度与length不一致")
-            else:   # 两者都有时，则保留字节串并以此计算数值（考虑到非DER等编码不唯一情况），并与数值核对
-                self._value_octets = value_octets
-                decoded = self.decode_value(self._value_octets, der)
-                if value != decoded:
-                    raise ValueError("数值value或数值字节串value_octets不一致")
-
-    @property
-    def tag(self) -> Tag:
-        """返回数据对象标签"""
-        raise NotImplementedError()
-
-    @property
-    def tag_name(self) -> str:
-        """返回数据对象名称"""
-        raise NotImplementedError()
-
-    def decode_value(self, octets: bytes, der: bool):
-        """将数值字节串转化为数值，由具体类型实现
-
-        :param octets: 数值字节串
-        :param der: 是否遵循DER编码规则
-        :return: 对应的数值
-        """
-        raise NotImplementedError()
-
-    def encode_value(self, value) -> bytes:
-        """将数值转化为数值字节串，由具体类型实现
-
-        :param value: 数值
-        :return: 数值字节串
-        """
-        raise NotImplementedError()
-
-    @property
-    def value(self):
-        return self._value
-
-    @property
-    def value_octets(self):
-        return self._value_octets
-
-    @property
-    def octets(self):
-        buffer = bytearray(self.tag.octets)
-        buffer.extend(self._length.octets)
-        buffer.extend(self._value_octets)
-        return bytes(buffer)
-
-    def __eq__(self, other):
-        return (self.tag == other.tag and self._length == other._length
-                and self.value == other.value)
-
-    def __repr__(self):
-        return ('[ASN.1 {}]{} ({} {} {})'
-                .format(self.tag_name, self.value,
-                        self.tag.octets.hex().upper(), self._length.octets.hex().upper(),
-                        self._value_octets.hex().upper()))
-
-
-class ASN1GeneralDataType(ASN1DataType):
-    """通用的未专门化的ASN.1元素类型"""
-    def __init__(self, tag: Tag, length: Length = None, value: bytes = None, value_octets: bytes = None, der: bool = False):
-        super().__init__(length, value, value_octets, der)
-        self._tag = tag
-
-    @property
-    def tag(self) -> Tag:
-        return self._tag
-
-    @property
-    def tag_name(self) -> str:
-        return f'General[{repr(self._tag)}]'
-
-    def decode_value(self, octets: bytes, der: bool) -> bytes:
-        return octets
-
-    def encode_value(self, value) -> bytes:
-        return value
-
-    def __repr__(self):
-        return ('[ASN.1 {}]{} ({} {} {})'
-                .format(self.tag_name, self.value.hex().upper(),
-                        self.tag.octets.hex().upper(), self._length.octets.hex().upper(),
-                        self._value_octets.hex().upper()))
 
 
 class ASN1EndOfContent(ASN1DataType):
@@ -375,6 +250,10 @@ class ASN1BitString(ASN1DataType):
     def tag(self) -> Tag:
         return TAG_BitString
 
+    def __repr__(self) -> str:
+        return self._repr_common_format(meta_expr=f'(len={self._length.value},unused={self.value[1]})',
+                                        value_expr=self._value[0].hex().upper())
+
     def decode_value(self, octets: bytes, der: bool) -> Tuple[bytes, int]:
         if len(octets) == 0:
             raise InvalidEncoding("BitString至少应该有1个字节")
@@ -409,6 +288,9 @@ class ASN1OctetString(ASN1DataType):
 
     def encode_value(self, value) -> bytes:
         return value
+
+    def __repr__(self) -> str:
+        return self._repr_common_format(value_expr=self._value.hex().upper())
 
 
 class ASN1Null(ASN1DataType):
@@ -502,6 +384,9 @@ class ASN1ObjectIdentifier(ASN1DataType):
                 octets.append(comp & 0x7f | 0x80)
                 comp >>= 7
         return bytes(reversed(octets))
+
+    def __repr__(self) -> str:
+        return self._repr_common_format(self.oid_string)
 
 
 class ASN1UnicodeString(ASN1DataType):
@@ -630,7 +515,7 @@ class ASN1NumericString(ASN1ISO2022String):
     PATTERN: re.Pattern = re.compile(r'^[0-9 ]*$')
     @classmethod
     def restrict(cls, value) -> bool:
-        return ASN1NumericString.PATTERN.match(value) is not None
+        return ASN1NumericString.PATTERN.match(value) is None
 
     @property
     def tag(self) -> Tag:
@@ -653,7 +538,7 @@ class ASN1PrintableString(ASN1ISO2022String):
     PATTERN: re.Pattern = re.compile(r'^[0-9A-Za-z \'()+,-.\/:=?]*$')
     @classmethod
     def restrict(cls, value) -> bool:
-        return ASN1PrintableString.PATTERN.match(value) is not None
+        return ASN1PrintableString.PATTERN.match(value) is None
 
     @property
     def tag(self) -> Tag:
@@ -910,43 +795,18 @@ class ASN1UTCTime(ASN1DataType):
             value = value.astimezone(timezone.utc)
         return value.strftime('%y%m%d%H%M%SZ').encode('utf-8')
 
-
-class ASN1Sequence(ASN1DataType):
-    def __init__(self, length: Length = None, value: Sequence[ASN1DataType] = None, value_octets: bytes = None,
-                 der: bool = False):
-        super().__init__(length, value, value_octets, der)
-
-    @property
-    def tag(self) -> Tag:
-        return TAG_Sequence
-
-    @property
-    def tag_name(self) -> str:
-        return 'Sequence'
-
-    def decode_value(self, octets: bytes, der: bool) -> List[ASN1DataType]:
-        return asn1_decode(octets, der)
-
-    def encode_value(self, value) -> bytes:
-        return asn1_encode(value)
-
-DATA_TYPE_MAP = {
+UNIVERSAL_DATA_TYPE_MAP.update({
     b'\x00': ASN1EndOfContent,
     b'\x01': ASN1Boolean,
     b'\x02': ASN1Integer,
     b'\x03': ASN1BitString,
-    # b'\x23': ASN1BitString_Constructed,
     b'\x04': ASN1OctetString,
-    # b'\x24': ASN1OctetString_Constructed,
     b'\x05': ASN1Null,
     b'\x06': ASN1ObjectIdentifier,
     b'\x07': ASN1ObjectDescriptor,
     b'\x09': ASN1Real,
     b'\x0A': ASN1Enumerated,
     b'\x0C': ASN1UTF8String,
-    # b'\x0E': ASN1Time,
-    b'\x30': ASN1Sequence,
-    # b'\x31': ASN1Set,
     b'\x12': ASN1NumericString,
     b'\x13': ASN1PrintableString,
     b'\x16': ASN1IA5String,
@@ -957,24 +817,5 @@ DATA_TYPE_MAP = {
     b'\x1b': ASN1GeneralString,
     b'\x1c': ASN1UniversalString,
     b'\x1e': ASN1BMPString,
-}
+})
 
-def asn1_decode(data: Union[bytes, bytearray, BinaryIO], der: bool = False) -> List[ASN1DataType]:
-    res = []
-    for t, l, v in iter_tlvs(data, in_octets=False):
-        if t.octets in DATA_TYPE_MAP:
-            item = DATA_TYPE_MAP[t.octets](length=l, value_octets=v, der=der)
-        else:
-            item = ASN1GeneralDataType(tag=t, length=l, value_octets=v)
-        res.append(item)
-    return res
-
-
-def asn1_encode(data: Union[ASN1DataType, Sequence[ASN1DataType], Generator[ASN1DataType]]) -> bytes:
-    if isinstance(data, ASN1DataType):
-        return data.octets
-    if isinstance(data, Sequence) or isinstance(data, Generator):
-        buffer = bytearray()
-        for item in data:
-            buffer.extend(item.octets)
-        return bytes(buffer)

@@ -1,11 +1,4 @@
-from asn1util import *
-
-from io import BytesIO
-from typing import BinaryIO, Generator
-import logging
-
-from .datatypes import *
-
+from .tlv import *
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
@@ -85,4 +78,5 @@ def iter_descendant_tlvs(data: Union[bytes, bytearray, BinaryIO], in_octets: boo
             yield t, l, v
         if not t.is_primitive:
             yield from iter_descendant_tlvs(v, in_octets)
+
 

@@ -2,6 +2,7 @@ class ASN1Exception(Exception):
     def __init__(self, message):
         super().__init__(message)
 
+
 class InvalidEncoding(ASN1Exception):
     def __init__(self, message, data=None):
         super().__init__(message)
@@ -10,6 +11,7 @@ class InvalidEncoding(ASN1Exception):
     @property
     def data(self):
         return self._data
+
 
 class DERIncompatible(InvalidEncoding):
     def __init__(self, message, data=None):
@@ -24,17 +26,3 @@ class UnsupportedValue(ASN1Exception):
     @property
     def data(self):
         return self._data
-
-
-
-
-class InvalidTLV(ASN1Exception):
-    def __init__(self, message):
-        super().__init__(message)
-
-
-
-
-class ValueEncodingException(InvalidTLV):
-    def __init__(self, message):
-        super().__init__(message)

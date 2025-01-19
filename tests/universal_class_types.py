@@ -1,5 +1,5 @@
 from unittest import TestCase
-from asn1util.datatypes import *
+from asn1util.data_types.primitive_data_types import *
 
 import random
 

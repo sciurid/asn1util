@@ -164,7 +164,8 @@ class Tag:
         return len(self._octets)
 
     def __repr__(self):
-        return f'{self._octets.hex().upper()}'
+        return (f'0x{self._octets.hex().upper()},class={Tag.TAG_CLASS_ABBR[self.clazz]},'
+                f'type={"P" if self.is_primitive else "C"}')
 
     def __eq__(self, other: 'Tag'):
         return self._octets == other._octets
@@ -200,11 +201,8 @@ class Tag:
     }
 
     def __str__(self):
-        # TODO
-        tc = Tag.TAG_CLASS_ABBR[self.clazz]
-        tt = 'P' if self.is_primitive else 'C'
-        # tn = TagNumber(self.number).name if (self.clazz == Tag.Class.UNIVERSAL and self.number in TagNumber.values) else ''
-        return f'{tc}{tt}|({repr(self)})'
+        return f'0x{self._octets.hex().upper()}'
+
 
     @staticmethod
     def build(the_class: Class, the_type: Type, number: int) -> 'Tag':

@@ -1,13 +1,13 @@
 from io import StringIO
 
-from .util import signed_int_to_bytes, unsigned_int_to_bytes
+from asn1util.util import signed_int_to_bytes, unsigned_int_to_bytes
 from decimal import Decimal
 from typing import Union, Tuple, Optional
 import struct
 from enum import IntEnum
 import logging
 import math
-from .exceptions import *
+from asn1util.exceptions import *
 
 
 logger = logging.getLogger(__name__)
