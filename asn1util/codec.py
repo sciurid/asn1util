@@ -58,7 +58,7 @@ def read_next_tlv(data: Union[bytes, bytearray, BinaryIO], return_octets: bool =
             return t, l, bytes(buffer)
 
 
-def iter_tlvs(data: Union[bytes, bytearray, BinaryIO], in_octets: bool = True):
+def iter_tlvs(data: Union[bytes, bytearray, BinaryIO], return_octets: bool = True):
     """从二进制数据或数据流中遍历读取ASN.1 BER，不展开constructed元素
 
     data: BER-TLV格式的数据流
@@ -69,13 +69,13 @@ def iter_tlvs(data: Union[bytes, bytearray, BinaryIO], in_octets: bool = True):
     else:
         istream = data
     while True:
-        t, l, v = read_next_tlv(istream, in_octets)
+        t, l, v = read_next_tlv(istream, return_octets)
         if t is None:
             break
         yield t, l, v
 
 
-def iter_descendant_tlvs(data: Union[bytes, bytearray, BinaryIO], in_octets: bool = True):
+def iter_descendant_tlvs(data: Union[bytes, bytearray, BinaryIO], return_octets: bool = True):
     """从二进制数据或数据流中迭代读取ASN.1 BER，按深度优先依次访问constructed元素的子元素
 
     data: BER-TLV格式的数据流
@@ -90,12 +90,12 @@ def iter_descendant_tlvs(data: Union[bytes, bytearray, BinaryIO], in_octets: boo
         t, l, v = read_next_tlv(istream, False)
         if t is None:
             break
-        if in_octets:
+        if return_octets:
             yield t.octets, l.octets, v
         else:
             yield t, l, v
         if not t.is_primitive:
-            yield from iter_descendant_tlvs(v, in_octets)
+            yield from iter_descendant_tlvs(v, return_octets)
 
 
 TokenOffsets = NamedTuple('TokenOffsets', t=int, l=int, v=int)
@@ -303,21 +303,10 @@ class StreamEncoder:
             raise ValueError("组合元素不应调用基本元素的构造函数")
 
         length = Length.eval(len(value))
-        if len(self._stack) == 0:  # 当前无正在构造的组合元素（父元素）
-            self._stream.write(tag.octets)
-            self._stream.write(length.octets)
-            self._stream.write(value)
-        else:
-            parent, buffer = self._stack[-1]
-            if buffer:  # 父元素为定长元素
-                buffer.extend(tag.octets)
-                buffer.extend(length.octets)
-                buffer.extend(value)
-            else:
-                self._stream.write(tag.octets)
-                self._stream.write(length.octets)
-                self._stream.write(value)
-        return
+        output = self._stream if len(self._stack) == 0 else self._stack[-1][2]
+        output.write(tag.octets)
+        output.write(length.octets)
+        output.write(value)
 
     def begin_constructed(self, t: Union[bytes, Tag], indefinite_length: bool = False):
         """开始构造组合类型元素
@@ -326,26 +315,34 @@ class StreamEncoder:
         if tag.is_primitive:
             raise ValueError("基本元素不应调用组合元素的构造函数")
 
+        output = self._stream if len(self._stack) == 0 else self._stack[-1][2]
+
         if indefinite_length:
-            self._stream.write(Tag(tag.octets).octets)
-            self._stream.write(bytes([Length.INDEFINITE]))
+            output.write(Tag(tag.octets).octets)
+            output.write(bytes([Length.INDEFINITE]))
         else:
-            self._stream.write(Tag(tag.octets).octets)
+            output.write(Tag(tag.octets).octets)
         # 将组合元素标签、是否不定长、值域缓冲区（如果定长）压入
-        self._stack.append((tag, None if indefinite_length else bytearray()))
+        self._stack.append((tag, indefinite_length, output if indefinite_length else BytesIO()))
 
     def end_constructed(self):
         """结束构造Constructed类型元素。
         """
+        tag, ind_len, output = self._stack.pop()
+
+        if ind_len:  # 父元素不定长
+            output.write(b'\x00\x00')  # 写入EOC，结束组合元素
+            return
+
+        octets = output.getvalue()
+        length = Length.eval(len(octets))
         if len(self._stack) == 0:
-            raise InvalidEncoding('尚未开始构造组合元素')
-        tag, buffer = self._stack.pop()
-        if buffer:  # 定长元素
-            length = Length.eval(len(buffer))
             self._stream.write(length.octets)
-            self._stream.write(buffer)
-        else:  # 不定长元素
-            self._stream.write(b'\x00\x00')  # 写入EOC元素
+            self._stream.write(octets)
+        else:
+            output = self._stack[-1][2]
+            output.write(length.octets)
+            output.write(octets)
 
     @contextmanager
     def construct(self, t: Union[bytes, Tag], indefinite_length: bool = False):
@@ -354,7 +351,6 @@ class StreamEncoder:
             yield
         finally:
             self.end_constructed()
-
 
     @property
     def data(self):

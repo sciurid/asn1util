@@ -121,7 +121,7 @@ class ASN1DataType:
                 .format(self.tag_name, meta_expr, value_expr))
 
     def __repr__(self):
-        return self._repr_common_format(self._value)
+        return self._repr_common_format(value_expr=self._value)
 
 
 class ASN1GeneralDataType(ASN1DataType):
@@ -164,7 +164,7 @@ EXTENDED_DATA_TYPE_MAP = {}
 
 def asn1_decode(data: Union[bytes, bytearray, BinaryIO], der: bool = False, callback=None) -> List[ASN1DataType]:
     res = []
-    for t, l, v in iter_tlvs(data, in_octets=False):
+    for t, l, v in iter_tlvs(data, return_octets=False):
         logger.debug('TLV: %s %s %s', t, l, v.hex())
         if t.octets in UNIVERSAL_DATA_TYPE_MAP:
             item = UNIVERSAL_DATA_TYPE_MAP[t.octets](length=l, value_octets=v, der=der)

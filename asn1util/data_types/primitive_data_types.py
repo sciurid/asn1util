@@ -216,7 +216,7 @@ class ASN1Real(ASN1DataType):
             return srv.octets
 
         if not self._base:  # 默认采用不损失精度的幂底数
-            self._base = 2 if isinstance(value, float) else 10
+            self._base = 2 if isinstance(value, float) or isinstance(value, int) else 10
         if self._base == 10:
             if isinstance(value, float):
                 return to_decimal_encoding(Decimal(value))
@@ -236,6 +236,10 @@ class ASN1Real(ASN1DataType):
                 return to_binary_encoding(*sne, base=self._base)
             else:
                 raise ValueError("数据{}类型不是int、float或Decimal".format(value))
+
+    def __repr__(self) -> str:
+        return self._repr_common_format(meta_expr=f'(len={self._length.value},base={self._base})',
+                                        value_expr=self.value)
 
 
 class ASN1BitString(ASN1DataType):
@@ -266,10 +270,17 @@ class ASN1BitString(ASN1DataType):
 
     def encode_value(self, value: Tuple[bytes, int]) -> bytes:
         bit_string, unused = value
-        if not 0 <= unused < 8:
+        buffer = bytearray()
+        buffer.append(unused)
+        if unused == 0:
+            buffer.extend(bit_string)
+        elif unused > 7:
             raise ValueError("BitString的末尾未用字符应当不超过7个")
+        else:
+            buffer.extend(bit_string[0:-1])
+            buffer.append(bit_string[-1] & (~(1 << unused - 1)))
 
-        return bytes((unused, )) + bit_string
+        return bytes(buffer)
 
 
 class ASN1OctetString(ASN1DataType):
@@ -387,7 +398,8 @@ class ASN1ObjectIdentifier(ASN1DataType):
         return bytes(reversed(octets))
 
     def __repr__(self) -> str:
-        return self._repr_common_format(self.oid_string)
+        return self._repr_common_format(meta_expr=f'(len={self._length.value})',
+                                        value_expr=self.oid_string)
 
 
 class ASN1UnicodeString(ASN1DataType):

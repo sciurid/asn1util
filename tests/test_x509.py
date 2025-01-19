@@ -26,7 +26,7 @@ class X509TestCase(TestCase):
 
 
     def check_der_compatible(self, cert):
-        for t, l, v in iter_descendant_tlvs(cert, in_octets=True):  # 从ASN.1数据中依次取出元素
+        for t, l, v in iter_descendant_tlvs(cert, return_octets=True):  # 从ASN.1数据中依次取出元素
             logger.debug('TLV: %s %s %s', t.hex(), l.hex(), v.hex())
             if t in UNIVERSAL_DATA_TYPE_MAP:
                 item = UNIVERSAL_DATA_TYPE_MAP[t](length=Length(l), value_octets=v)
