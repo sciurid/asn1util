@@ -1,7 +1,7 @@
 from io import StringIO
 
 from asn1util.util import signed_int_to_bytes, unsigned_int_to_bytes
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from typing import Union, Tuple, Optional
 import struct
 from enum import IntEnum
@@ -243,7 +243,7 @@ def to_binary_encoding(s:int, n: int, e: int, base: int = 2) -> bytes:
     return bytes(data)
 
 
-def to_decimal_encoding(value: Union[int, Decimal]) -> bytes:
+def to_decimal_encoding(value: Union[int, float, Decimal]) -> bytes:
     """按照ASN.1 Real格式规范将整数int或十进制数Decimal进行十进制编码
 
     X.690 8.5.8 (P8)
@@ -252,6 +252,9 @@ def to_decimal_encoding(value: Union[int, Decimal]) -> bytes:
 
     :param value: 整数int或者十进制数Decimal
     """
+    if isinstance(value, float):
+        value = Decimal(str(value))
+
     buffer = StringIO()
     if isinstance(value, int):
         if value < 0:
@@ -320,6 +323,7 @@ def to_ieee758_double(sign: int, number: int, exponent: int) -> float:
     elif exponent_part > 0:  # 正规数可表示（或上溢出）
         significant = (number << (nl - r_shift)) & ((1 << nl) - 1)
         # 有效数（significant）部分等同于尾数（mantissa）左移尾数域位数再右移除最高位1以外的其他位数
+
     else:  # 次正规数表示或下溢出
         exponent_part = 0
         r_shift = 1 - exponent - bias
@@ -338,7 +342,7 @@ def to_ieee758_double(sign: int, number: int, exponent: int) -> float:
 
     e_bytes = exponent_part.to_bytes(2, byteorder='big', signed=False)
     n_bytes = significant.to_bytes(7, byteorder='big', signed=False)
-    buffer.append((0x80 if sign < 0 else 0x00) | ((e_bytes[0] & 0x07) << 3) | ((e_bytes[1] & 0xf0) >> 4))
+    buffer.append((0x80 if sign < 0 else 0x00) | ((e_bytes[0] & 0x07) << 4) | ((e_bytes[1] & 0xf0) >> 4))
     buffer.append(((e_bytes[1] & 0x0f) << 4) | (n_bytes[0] & 0x0f))
     buffer.extend(n_bytes[1:])
     return struct.unpack('>d', bytes(buffer))[0]

@@ -26,6 +26,21 @@ class RealValueTestCase(TestCase):
             constructed = to_ieee758_double(s, n, e)
             self.assertEqual(constructed, f)
 
+    def test_single(self):
+        f = 1.23456789
+        r = ASN1Real(f)
+        print(r.value)
+        print(r.octets.hex(' '))
+        print(r)
+
+    def test_float_int(self):
+        s = 1
+        n = 200
+        e = 0
+
+        constructed = to_ieee758_double(s, n, e)
+        print(constructed)
+
     def test_specials(self):
         # 特殊数测试
         for fv in (-0.0, float('inf'), float('-inf')):

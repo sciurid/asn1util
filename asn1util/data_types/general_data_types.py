@@ -188,10 +188,15 @@ def asn1_encode(data: Union[ASN1DataType, Sequence[ASN1DataType], Generator[ASN1
         return bytes(buffer)
 
 
-def asn1_print_items(items, indent=0, file=sys.stdout):
-    for item in items:
+def asn1_print_data(data: Union[bytes, bytearray, BinaryIO], file=sys.stdout):
+    def _print_item(item: ASN1DataType, indent):
         if item.tag.is_primitive:
             print('{}{}'.format('    ' * indent, item), file=file)
         else:
             print('{}{}'.format('    ' * indent, item), file=file)
-            asn1_print_items(item.value, indent + 1)
+            for sub in item.value:
+                _print_item(sub, indent + 1)
+
+    for i in asn1_decode(data):
+        _print_item(i, 0)
+

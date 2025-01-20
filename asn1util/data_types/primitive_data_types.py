@@ -77,6 +77,9 @@ class ASN1EndOfContent(ASN1DataType):
         return b''
 
 
+ASN1_EOC = ASN1EndOfContent()
+
+
 class ASN1Boolean(ASN1DataType):
     """X.690 8.2 Boolean"""
     def __init__(self, value: bool = None, length: Length = None, value_octets: bytes = None, der: bool = False):
@@ -100,6 +103,10 @@ class ASN1Boolean(ASN1DataType):
 
     def encode_value(self, value: bool) -> bytes:
         return b'\xff' if value else b'\x00'
+
+
+ASN1_TRUE = ASN1Boolean(True)
+ASN1_FALSE = ASN1Boolean(False)
 
 
 class ASN1Integer(ASN1DataType):
@@ -164,6 +171,7 @@ class ASN1Real(ASN1DataType):
         leading = octets[0]
         if (b8b7 := leading & 0xc0) == 0x00:  # b8b7=0，十进制表示
             # X.690 8.5.8 (P8)
+            self._base = 10
             if (nr := leading & 0x3f) < 4:
                 if self._der and nr != 0x03:  # DER且非NR3格式
                     raise DERIncompatible("DER编码的十进制实数只允许ISO 6093 NR3格式")
@@ -180,17 +188,17 @@ class ASN1Real(ASN1DataType):
             f: int = (leading & 0x0c) >> 2
 
             if (b2b1 := leading & 0x03) == 0x00:
-                e: int = int.from_bytes(octets[1:2], byteorder='big')
+                e: int = int.from_bytes(octets[1:2], byteorder='big', signed=True)
                 n: int = int.from_bytes(octets[2:], byteorder='big')
             elif b2b1 == 0x01:
-                e: int = int.from_bytes(octets[1:3], byteorder='big')
+                e: int = int.from_bytes(octets[1:3], byteorder='big', signed=True)
                 n: int = int.from_bytes(octets[3:], byteorder='big')
             elif b2b1 == 0x02:
-                e: int = int.from_bytes(octets[1:4], byteorder='big')
+                e: int = int.from_bytes(octets[1:4], byteorder='big', signed=True)
                 n: int = int.from_bytes(octets[4:], byteorder='big')
             else:
-                el = int.from_bytes(octets[1:2], byteorder='big')
-                e: int = int.from_bytes(octets[2:el + 2], byteorder='big')
+                el = int.from_bytes(octets[1:2], byteorder='big', signed=False)
+                e: int = int.from_bytes(octets[2:el + 2], byteorder='big', signed=True)
                 n: int = int.from_bytes(octets[el + 2:], byteorder='big')
 
             if (b6b5 := leading & 0x30) == 0x00:
@@ -215,13 +223,10 @@ class ASN1Real(ASN1DataType):
         if srv := SpecialRealValue.check_special_value(value):
             return srv.octets
 
-        if not self._base:  # 默认采用不损失精度的幂底数
+        if self._base is None:  # 默认采用不损失精度的幂底数
             self._base = 2 if isinstance(value, float) or isinstance(value, int) else 10
         if self._base == 10:
-            if isinstance(value, float):
-                return to_decimal_encoding(Decimal(value))
-            else:
-                return to_decimal_encoding(value)
+            return to_decimal_encoding(value)
         else:
             if isinstance(value, int):
                 return to_binary_encoding(*int_to_base2_sne(value))
@@ -329,6 +334,9 @@ class ASN1Null(ASN1DataType):
         if value is not None:
             raise UnsupportedValue('Null值必须为None', value)
         return b''
+
+
+ASN1_NULL = ASN1Null()
 
 
 class ASN1ObjectIdentifier(ASN1DataType):

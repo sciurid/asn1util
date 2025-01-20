@@ -20,12 +20,16 @@ ASN.1格式定义多种基本的数据元素类型和结构类型，以及基本
 
 - asn1util.tlv
   - Tag和Length的定义，实现了编码语法规则
-- asn1util.codec
-  - 基于ASN.1编码规则的TLV对象和字节串/流的编解码
 - asn1util.exceptions
   - 抛出的异常
 - asn1util.util
   - 处理数据的工具
+- asn1util.codec.basic
+  - 基于ASN.1编码规则的TLV对象和字节串/流的基本编解码函数
+- asn1util.codec.decoder
+  - 基于ASN.1编码规则的流式输出的解码类
+- asn1util.codec.encoder
+  - 基于ASN.1编码规则的流式输出的编码类
 - asn1util.data_types.general_data_types
   - ASN.1元素的基本类型定义：ASN1DataType/ASN1GeneralDataType
   - 基于ASN.1编码规则的ASN.1元素和字节串/流的编解码
@@ -113,7 +117,33 @@ print(encoder.data.hex(' '))
 for t, l, v in iter_descendant_tlvs(encoder.data, in_octets=False):
     print(t, l, v.hex())
 
-asn1_print_items(asn1_decode(encoder.data))
+asn1_print_data(encoder.data)
+```
+
+#### 支持直接编码Python基本数据类型
+
+```
+encoder = StreamEncoder()
+with encoder.within_sequence():
+    encoder.append_boolean(True)
+    encoder.append_integer(32767)
+    encoder.append_integer(-32768)
+
+with encoder.within_set():
+    encoder.append_real(1234567890)
+    encoder.append_real(Decimal(1234567890))
+    encoder.append_real(1.23456789)
+    encoder.append_real(1.23456789, base=10)
+
+with encoder.within_sequence():
+    encoder.append_utf8_string('中华人民共和国万岁 世界人民大团结万岁')
+    encoder.append_printable_string('The fox jumps over a lazy dog. (1234567890)')
+    encoder.append_object_identifier('1.2.840.113549.1.1.11')
+
+print(encoder.data.hex(' '))
+for t, l, v in iter_descendant_tlvs(encoder.data, return_octets=False):
+    print(t, l, v.hex())
+asn1_print_data(encoder.data)
 ```
 
 #### 支持不定长（Indefinite Length）
@@ -135,7 +165,7 @@ print(encoder.data.hex(' '))
 for t, l, v in iter_descendant_tlvs(encoder.data, in_octets=False):
     print(t, l, v.hex())
 
-asn1_print_items(asn1_decode(encoder.data))
+asn1_print_data(encoder.data)
 ```
 
 ### ASN.1解码

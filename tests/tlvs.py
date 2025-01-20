@@ -29,9 +29,9 @@ class TLVTestCase(TestCase):
         for t, l, v in iter_descendant_tlvs(encoder.data, return_octets=False):
             print(t, l, v.hex())
 
-        asn1_print_items(asn1_decode(encoder.data))
+        asn1_print_data(encoder.data)
 
-    def test_encoding(self):
+    def test_encoding_definite(self):
         encoder = StreamEncoder()
         with encoder.construct(TAG_Sequence):
             encoder.append_primitive(TAG_Boolean, b'\xff')
@@ -45,7 +45,7 @@ class TLVTestCase(TestCase):
         for t, l, v in iter_descendant_tlvs(encoder.data, return_octets=False):
             print(t, l, v.hex())
 
-        asn1_print_items(asn1_decode(encoder.data))
+        asn1_print_data(encoder.data)
 
     def test_decoding(self):
         encoder = StreamEncoder()
@@ -73,7 +73,28 @@ class TLVTestCase(TestCase):
         self.assertIsNone(l)
         self.assertIsNone(v)
 
+    def test_encoder(self):
+        encoder = StreamEncoder()
+        with encoder.within_sequence():
+            encoder.append_boolean(True)
+            encoder.append_integer(32767)
+            encoder.append_integer(-32768)
 
+        with encoder.within_set():
+            encoder.append_real(1234567890)
+            encoder.append_real(Decimal(1234567890))
+            encoder.append_real(1.23456789)
+            encoder.append_real(1.23456789, base=10)
+
+        with encoder.within_sequence():
+            encoder.append_utf8_string('中华人民共和国万岁 世界人民大团结万岁')
+            encoder.append_printable_string('The fox jumps over a lazy dog. (1234567890)')
+            encoder.append_object_identifier('1.2.840.113549.1.1.11')
+
+        print(encoder.data.hex(' '))
+        for t, l, v in iter_descendant_tlvs(encoder.data, return_octets=False):
+            print(t, l, v.hex())
+        asn1_print_data(encoder.data)
 
 
 

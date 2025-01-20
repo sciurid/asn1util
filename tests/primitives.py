@@ -10,11 +10,9 @@ class UniversalClassTypes(TestCase):
         eoc = ASN1EndOfContent()
         print(eoc)
 
-        bTrue = ASN1Boolean(value=True)
-        bFalse = ASN1Boolean(value=False)
-        print(bTrue, bFalse)
-        self.assertEqual(bTrue, ASN1Boolean(value_octets=bTrue.value_octets))
-        self.assertEqual(bFalse, ASN1Boolean(value_octets=bFalse.value_octets))
+        print(ASN1_TRUE, ASN1_FALSE)
+        self.assertEqual(ASN1Boolean(True), ASN1Boolean(value_octets=ASN1_TRUE.value_octets))
+        self.assertEqual(ASN1Boolean(False), ASN1Boolean(value_octets=ASN1_FALSE.value_octets))
 
         for r in [random.randint(0, 1 << 32), -1 * random.randint(0, 1 << 32), 127, 128, -128, -129]:
             iR = ASN1Integer(value=r)

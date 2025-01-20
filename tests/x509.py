@@ -1,17 +1,17 @@
 from unittest import TestCase, skip
 import logging
-import os
+from os.path import abspath, join, pardir
 from asn1util import *
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)8s %(name)20s %(lineno)04s %(message)s")
 logger = logging.getLogger(__name__)
 
+location = join(abspath(join(__file__, pardir)), 'x509samples')
 
 class X509TestCase(TestCase):
     def test_certificates(self):
-        location = os.path.abspath(os.path.join(__file__, os.pardir))
         for fn in ('chenqiang.me.cer', 'sm2.rca.der', 'sm2.oca.der'):
-            self.check_certificate(os.path.join(location, fn))
+            self.check_certificate(join(location, fn))
 
 
     def check_certificate(self, filepath):
@@ -19,7 +19,7 @@ class X509TestCase(TestCase):
         with open(filepath, 'rb') as cert:
             data = cert.read()
 
-        asn1_print_items(asn1_decode(data))
+        asn1_print_data(data)
         self.check_der_compatible(data)
         item_sequence = asn1_decode(data)[0]
         self.assertEqual(data, item_sequence.octets)
