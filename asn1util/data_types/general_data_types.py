@@ -1,6 +1,6 @@
 import sys
 
-from asn1util.codec import *
+from asn1util.codecs.basic import *
 from typing import List, Sequence, Generator
 import logging
 
