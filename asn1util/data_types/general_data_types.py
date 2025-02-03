@@ -123,6 +123,14 @@ class ASN1DataType:
     def __repr__(self):
         return self._repr_common_format(value_expr=self._value)
 
+    @classmethod
+    def from_bytes(cls, octets: bytes):
+        t, l, v = read_next_tlv(octets, return_octets=False)
+        instance = cls(length=l, value_octets=v)
+        if instance.tag != t:
+            raise ASN1Exception(f'调用方法类型{instance.tag}与数据标签类型{t}不一致')
+        return instance
+
 
 class ASN1GeneralDataType(ASN1DataType):
     """通用的未专门化的ASN.1元素类型"""
@@ -156,6 +164,14 @@ class ASN1GeneralDataType(ASN1DataType):
         else:
             return self._repr_common_format(meta_expr=f'(len={self._length.value},items={len(self._value)})',
                                             value_expr='')
+
+    @classmethod
+    def from_bytes(cls, octets: bytes, expected_tag: Optional[Tag] = None):
+        t, l, v = read_next_tlv(octets, return_octets=False)
+        instance = cls(length=l, value_octets=v)
+        if expected_tag and expected_tag != t:
+            raise ASN1Exception(f'期望类型{expected_tag}与数据标签类型{t}不一致')
+        return instance
 
 
 UNIVERSAL_DATA_TYPE_MAP = {}
