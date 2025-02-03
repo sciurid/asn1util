@@ -287,6 +287,20 @@ class ASN1BitString(ASN1DataType):
 
         return bytes(buffer)
 
+    @property
+    def value(self) -> bytes:
+        """重载了ASN1DataType的value属性
+
+        因为BitString类型实际中很少出现不是整字节的情况，因此将value重写为整字节部分。
+        确实需要处理非整字节情况时，检查unused_bit_length属性。
+        """
+        return self._value[0]
+
+    @property
+    def unused_bit_length(self) -> int:
+        """BitString末尾的未用比特数"""
+        return self.value[1]
+
 
 class ASN1OctetString(ASN1DataType):
     def __init__(self, value: bytes = None, length: Length = None, value_octets: bytes = None, der: bool = False):
