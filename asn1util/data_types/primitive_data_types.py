@@ -299,7 +299,7 @@ class ASN1BitString(ASN1DataType):
     @property
     def unused_bit_length(self) -> int:
         """BitString末尾的未用比特数"""
-        return self.value[1]
+        return self._value[1]
 
 
 class ASN1OctetString(ASN1DataType):
