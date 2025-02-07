@@ -96,6 +96,3 @@ class TLVTestCase(TestCase):
             print(t, l, v.hex())
         asn1_print_data(encoder.data)
 
-
-
-

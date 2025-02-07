@@ -261,8 +261,8 @@ class ASN1BitString(ASN1DataType):
         return TAG_BitString
 
     def __repr__(self) -> str:
-        return self._repr_common_format(meta_expr=f'(len={self._length.value},unused={self.value[1]})',
-                                        value_expr=self._value[0].hex().upper())
+        return self._repr_common_format(meta_expr=f'(len={self._length.value},unused={self.unused_bit_length})',
+                                        value_expr=self.value.hex().upper())
 
     def decode_value(self, octets: bytes, der: bool) -> Tuple[bytes, int]:
         if len(octets) == 0:
