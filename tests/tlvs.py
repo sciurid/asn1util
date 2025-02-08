@@ -29,7 +29,7 @@ class TLVTestCase(TestCase):
         for t, l, v in iter_descendant_tlvs(encoder.data, return_octets=False):
             print(t, l, v.hex())
 
-        asn1_print_data(encoder.data)
+        asn1_print(encoder.data)
 
     def test_encoding_definite(self):
         encoder = StreamEncoder()
@@ -45,7 +45,7 @@ class TLVTestCase(TestCase):
         for t, l, v in iter_descendant_tlvs(encoder.data, return_octets=False):
             print(t, l, v.hex())
 
-        asn1_print_data(encoder.data)
+        asn1_print(encoder.data)
 
     def test_decoding(self):
         encoder = StreamEncoder()
@@ -94,5 +94,5 @@ class TLVTestCase(TestCase):
         print(encoder.data.hex(' '))
         for t, l, v in iter_descendant_tlvs(encoder.data, return_octets=False):
             print(t, l, v.hex())
-        asn1_print_data(encoder.data)
+        asn1_print(encoder.data)
 

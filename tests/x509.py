@@ -19,7 +19,7 @@ class X509TestCase(TestCase):
         with open(filepath, 'rb') as cert:
             data = cert.read()
 
-        asn1_print_data(data)
+        asn1_print(data)
         self.check_der_compatible(data)
         item_sequence = asn1_decode(data)[0]
         self.assertEqual(data, item_sequence.octets)
