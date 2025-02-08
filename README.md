@@ -203,6 +203,52 @@ self.assertIsNone(l)
 self.assertIsNone(v)
 ```
 
+#### 已知类型解码
+
+通用类型的实现在asn1util.data_types包里，都是以ASN1DataType为基类的子类，分别对应不同的数据类型。
+已经实现的具体类型有：
+
+- ASN1EndOfContent
+- ASN1Boolean
+- ASN1Integer
+- ASN1Enumerated
+- ASN1Real
+- ASN1BitString
+- ASN1OctetString
+- ASN1Null
+- ASN1ObjectIdentifier
+- ASN1UTF8String
+- ASN1UniversalString
+- ASN1BMPString
+- ASN1ISO2022String
+- ASN1NumericString
+- ASN1PrintableString
+- ASN1VisibleString
+- ASN1GraphicString
+- ASN1ObjectDescriptor
+- ASN1GeneralString
+- ASN1IA5String
+- ASN1GeneralizedTime
+- ASN1UTCTime
+- ASN1Sequence
+- ASN1Set
+
+此外还有一个通用的未专门化的类型：
+
+- ASN1GeneralDataType
+
+这些类型大多都可以通过from_bytes函数实现从bytes-like数据中生成相应对象；
+octets属性是整个对象的bytes（二进制）表示。
+tag和length属性分别为Tag和Length类型的标签、长度，
+value属性为相应类型的数值，value_octets属性为数值的字节串表示。
+详情可见ASN1DataType基类。
+
+此部分有三个函数用于处理连续的asn1数据：
+- asn1_encode函数：用于将一个或一组ASN1DataType对象转化为二进制数据。
+- asn1_decode函数：用于从二进制数据中读出一个或一组ASN1DataType并保持其结构。
+  - 例如，SEQUENCE类型的数据读出为ASN1Sequence对象，其value为所包含对象的列表。
+- asn1_print函数：用于以结构化的方式打印asn.1格式的二进制数据。
+
 ## 后续开发计划
 
 - 扩充常见的ASN.1类型
